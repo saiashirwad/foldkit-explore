@@ -505,7 +505,7 @@ const inspectorSection = (
         [
           h.h4([], [title]),
           hint === '' ? h.empty : h.p([h.Class('inspector-hint')], [hint]),
-          ...children,
+          h.div([h.Class('inspector-body')], children),
         ],
       )
 
@@ -519,7 +519,7 @@ const inspectorDetails = (
     [h.Class('inspector-details')],
     [
       h.summary([], [title, h.span([h.Class('inspector-note')], [note])]),
-      ...children,
+      h.div([h.Class('inspector-body')], children),
     ],
   )
 
