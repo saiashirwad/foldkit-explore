@@ -4,7 +4,7 @@ import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 import { expect, test } from 'vitest'
 
-import { release, weather } from '../programs'
+import { release, signup, weather } from '../programs'
 import { type PendingCommand, describe, make } from './atlas'
 import { fixture } from './fixture'
 
@@ -16,6 +16,10 @@ test('every weather state', async () => {
 
 test('every release state', async () => {
   await expect(describe(release, 12)).toMatchFileSnapshot('release.atlas')
+})
+
+test('every signup state', async () => {
+  await expect(describe(signup, 10)).toMatchFileSnapshot('signup.atlas')
 })
 
 test('a release is never deployed twice at once', () => {

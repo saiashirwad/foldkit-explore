@@ -55,8 +55,8 @@ bunx oxfmt src          # format
 
 ### How the atlas works
 
-- **Exploration.** Exploration is breadth-first in layers, memoized (`layerAt`). Successors are the Setup's moves plus answers to the *oldest* pending Command. The oldest-only rule is deliberate, to avoid an explosion of orderings.
-- **Merging.** A state is keyed by `identity.of([setup.moves, setup.responders, model, pending names and args])`. Setups that share behaviour references merge. So declare `moves` and `responders` at module scope unless they must close over a setup choice.
+- **Exploration.** Exploration is breadth-first in layers, memoized (`layerAt`). Successors are declared moves or public Scene-derived interactions plus Command answers. Programs choose oldest-only (default) or any-pending scheduling; Signup uses any-pending. See README for supported view-driven controls and scope limits.
+- **Merging.** A state is keyed by `identity.of([setup.moves, setup.inputs, setup.responders, model, pending names and args])`. Setups that share behaviour references merge. So declare `moves` and `responders` at module scope unless they must close over a setup choice.
 - **Live clicks.** A click inside a card sends the Message through `atlas.send`, which validates it with `Schema.is(program.Message)` and records an `Event` hop.
 - **Budget.** `budget` (5,000) caps exploration. `reach().isComplete` is false when the budget is hit.
 - **Cost.** Identity cost is proportional to the objects `update` replaced, each at its own width. A changed 10,000-element array is still rescanned. Do not claim O(change).
@@ -76,7 +76,7 @@ bunx oxfmt src          # format
 
 ### Known issues
 
-- Moves are declared by hand. Reading them from a rendered view needs Foldkit to expose the Messages behind event handlers (handlers close over the runtime's dispatch, and Scene's renderer is internal). This is a natural ask to Foldkit's maintainer.
+- View-driven cases use the public Scene driver to record Messages from enabled buttons and configured text inputs. This is a limited probe, not universal interaction introspection; Mount-backed views are unsupported. Other examples retain declared moves.
 - The Weather view hard-codes `id="location"`, so several Weather cards trigger Foldkit's duplicate-id warning.
 - A state's address is the trace by which it was first found. If a live click discovers a state before breadth-first search does, its address goes through an `Event` hop. It still resolves.
 - Command definitions don't expose their declared `messages`, so the atlas can't warn about a declared response with no responder.

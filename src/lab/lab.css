@@ -71,6 +71,7 @@
     display: flex;
     align-items: center;
     gap: 20px;
+    flex-wrap: wrap;
     min-height: 56px;
     padding: 10px 24px;
     background: #ffffffee;
@@ -208,85 +209,46 @@
 
   /* CASE */
 
-  .case {
+  .case-tools {
     display: flex;
-    flex-direction: column;
+    justify-content: flex-end;
+    padding: 0 2px 6px;
+  }
+
+  .lab .case-inspect {
+    padding: 3px 8px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .lab .case-inspect:hover,
+  .lab .case-inspect:active {
+    background: var(--soft);
+    color: var(--ink);
+  }
+
+  .lab .case-inspect:focus-visible {
+    outline-color: var(--ink);
+  }
+
+  .case.is-selected .case-inspect {
+    border-color: var(--line);
+    color: var(--ink);
+  }
+
+  .case-preview {
     overflow: hidden;
     background: #fff;
     border: 1px solid var(--line);
     border-radius: 12px;
-    cursor: pointer;
-    transition:
-      border-color 0.15s,
-      box-shadow 0.15s;
-  }
-
-  .case:hover {
-    border-color: #d6d6e0;
-  }
-
-  .case.is-selected {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px #6d4fe014;
-  }
-
-  .case-head {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 14px 0;
-    font: 10px var(--mono);
-    color: var(--muted);
-  }
-
-  .case-step {
-    overflow: hidden;
-    color: var(--accent);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .case-origin {
-    color: var(--faint);
-  }
-
-  .case-preview {
-    flex: 1;
-    padding: 2px 4px 8px;
     zoom: 0.82;
   }
 
-  .case-answers {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 5px;
-    padding: 8px 12px;
-    border-top: 1px solid var(--soft);
-  }
-
-  .case-answers-label {
-    margin-right: 2px;
-    font: 10px var(--mono);
-    color: var(--muted);
-  }
-
-  .case-answers-count {
-    font: 10px var(--mono);
-    color: var(--faint);
-  }
-
-  .lab .case-answers button {
-    padding: 2px 8px;
-    border: 1px solid #e2dbf9;
-    border-radius: 6px;
-    background: #fff;
-    color: var(--accent);
-    font: 10px var(--mono);
-  }
-
-  .lab .case-answers button:hover {
-    background: var(--accent-soft);
+  .case.is-selected .case-preview {
+    border-color: var(--muted);
   }
 
   /* INSPECTOR */

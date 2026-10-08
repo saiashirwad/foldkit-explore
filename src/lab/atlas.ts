@@ -5,6 +5,7 @@ import { defineView } from 'foldkit/submodel'
 
 import { type Choices, Decision, outcomes } from './fixture'
 import { makeIdentity } from './identity'
+import { type InputDomain, inspect } from './interactions'
 
 // PROGRAM
 
@@ -13,6 +14,7 @@ export type Setup<Model, Message> = Readonly<{
   commands?: Update.Commands<Message>
   moves?: (model: Model) => Choices<Message>
   responders?: ReadonlyArray<Responder<Message>>
+  inputs?: ReadonlyArray<InputDomain>
 }>
 
 // NOTE: `answer` is a method so a Responder built from a Command's typed args
@@ -30,8 +32,27 @@ export const respond = <
   answer: (args: Args) => Choices<Message>,
 ): Responder<Message> => ({ command: definition.name, answer })
 
+export type State<Model, Message> = Readonly<{
+  model: Model
+  pending: Update.Commands<Message>
+}>
+
+export type Property<Model, Message> = Readonly<{
+  name: string
+  state?: (state: State<Model, Message>) => boolean
+  transition?: (
+    before: State<Model, Message>,
+    message: Message,
+    after: State<Model, Message>,
+  ) => boolean
+}>
+
+export type Schedule = 'oldest' | 'any'
+
 export type Program<Model, Message> = Readonly<{
   name: string
+  schedule?: Schedule
+  properties?: ReadonlyArray<Property<Model, Message>>
   Model: Schema.Codec<Model, unknown>
   Message: Schema.Codec<Message, unknown>
   update: (model: Model, message: Message) => Update.Return<Model, Message>
@@ -79,8 +100,21 @@ export type FixtureOptions = Readonly<{
   options: ReadonlyArray<string>
 }>
 
+export type Violation = Readonly<{
+  property: string
+  trace: ReadonlyArray<Step>
+  state: string
+}>
+export type Group = Readonly<{ home: string; states: ReadonlyArray<string> }>
+
 export type Atlas = Readonly<{
   name: string
+  schedule: Schedule
+  budget: number
+  propertyNames: ReadonlyArray<string>
+  check: (depth: number) => ReadonlyArray<Violation>
+  groups: (states: ReadonlyArray<string>) => ReadonlyArray<Group>
+  grouping: string
   reach: (depth: number) => Reach
   successors: (state: string) => ReadonlyArray<Step>
   send: (state: string, message: unknown) => Option.Option<string>
@@ -135,7 +169,23 @@ export const make = <Model, Message>(
   program: Program<Model, Message>,
   budget = 5_000,
 ): Atlas => {
+  const schedule = program.schedule ?? 'oldest'
   const identity = makeIdentity()
+  const inspections = new Map<
+    unknown,
+    ReturnType<typeof inspect<Model, Message>>
+  >()
+  const messages = new WeakMap<Step, Message>()
+  const inspection = (node: Node<Model, Message>) => {
+    const key = identity.of([node.model, node.setup.inputs])
+    const known = inspections.get(key)
+    if (known !== undefined) {
+      return known
+    }
+    const result = inspect(program.view, node.model, node.setup.inputs ?? [])
+    inspections.set(key, result)
+    return result
+  }
   const nodes = new Map<string, Node<Model, Message>>()
   const idOf = new Map<unknown, string>()
   const successorsOf = new Map<string, ReadonlyArray<Step>>()
@@ -165,8 +215,17 @@ export const make = <Model, Message>(
     })
 
   const arrive = (arrival: Arrival<Model, Message>): Step => {
+    if (
+      arrival.setup.moves !== undefined &&
+      arrival.setup.inputs !== undefined
+    ) {
+      throw new Error(
+        `${program.name}: choose view-driven inputs or declared moves, not both.`,
+      )
+    }
     const key = identity.of([
       arrival.setup.moves,
+      arrival.setup.inputs,
       arrival.setup.responders ?? [],
       arrival.model,
       Array.map(arrival.pending, command => [command.name, command.args ?? {}]),
@@ -215,27 +274,48 @@ export const make = <Model, Message>(
     }
   }
 
+  const transition = (
+    node: Node<Model, Message>,
+    message: Message,
+    remaining: Update.Commands<Message>,
+    hop: Hop & Readonly<{ label: string }>,
+  ): Step => {
+    const step = arrive({ ...hop, ...after(node, message, remaining) })
+    messages.set(step, message)
+    return step
+  }
+
   const moves = (node: Node<Model, Message>): ReadonlyArray<Step> =>
-    Option.match(Option.fromNullishOr(node.setup.moves), {
-      onNone: () => [],
-      onSome: choose =>
-        Array.map(
-          outcomes(() => choose(node.model)),
-          ({ decisions, value }) =>
-            arrive({
-              kind: 'Move',
-              decisions,
-              maybeMessage: Option.none(),
-              label: labelOf(decisions),
-              ...after(node, value, node.pending),
-            }),
-        ),
-    })
+    node.setup.inputs !== undefined
+      ? Array.map(inspection(node).interactions, ({ label, message }, index) =>
+          transition(node, message, node.pending, {
+            kind: 'Move',
+            decisions: [
+              { fixture: 'interaction', option: `${index}: ${label}` },
+            ],
+            maybeMessage: Option.none(),
+            label,
+          }),
+        )
+      : Option.match(Option.fromNullishOr(node.setup.moves), {
+          onNone: () => [],
+          onSome: choose =>
+            Array.map(
+              outcomes(() => choose(node.model)),
+              ({ decisions, value }) =>
+                transition(node, value, node.pending, {
+                  kind: 'Move',
+                  decisions,
+                  maybeMessage: Option.none(),
+                  label: labelOf(decisions),
+                }),
+            ),
+        })
 
   const answers = (node: Node<Model, Message>): ReadonlyArray<Step> =>
-    Option.match(Array.head(node.pending), {
-      onNone: () => [],
-      onSome: command =>
+    Array.flatMap(
+      schedule === 'oldest' ? Array.take(node.pending, 1) : node.pending,
+      (command, index) =>
         pipe(
           Array.findFirst(
             node.setup.responders ?? [],
@@ -249,22 +329,36 @@ export const make = <Model, Message>(
           ),
           responder => outcomes(() => responder.answer(command.args ?? {})),
           Array.map(({ decisions, value }) =>
-            arrive({
-              kind: 'Answer',
-              decisions,
-              maybeMessage: Option.none(),
-              label: Array.join(
-                Array.filter(
-                  [command.name, labelOf(decisions)],
-                  String.isNonEmpty,
-                ),
-                ' ',
+            transition(
+              node,
+              value,
+              Array.filter(
+                node.pending,
+                (_command, position) => position !== index,
               ),
-              ...after(node, value, Array.drop(node.pending, 1)),
-            }),
+              {
+                kind: 'Answer',
+                decisions:
+                  schedule === 'any'
+                    ? [{ fixture: 'pending', option: `${index}` }, ...decisions]
+                    : decisions,
+                maybeMessage: Option.none(),
+                label: Array.join(
+                  Array.filter(
+                    [
+                      command.name,
+                      schedule === 'any' ? `#${index + 1}` : '',
+                      labelOf(decisions),
+                    ],
+                    String.isNonEmpty,
+                  ),
+                  ' ',
+                ),
+              },
+            ),
           ),
         ),
-    })
+    )
 
   const successors = (id: string): ReadonlyArray<Step> => {
     const known = successorsOf.get(id)
@@ -385,8 +479,94 @@ export const make = <Model, Message>(
         ),
     })
 
+  const checks = new Map<number, ReadonlyArray<Violation>>()
+  const check = (depth: number): ReadonlyArray<Violation> => {
+    const cached = checks.get(depth)
+    if (cached !== undefined) {
+      return cached
+    }
+    const failures = new Map<string, Violation>()
+    const report = (failure: Violation) => {
+      const previous = failures.get(failure.property)
+      if (
+        previous === undefined ||
+        failure.trace.length < previous.trace.length
+      ) {
+        failures.set(failure.property, failure)
+      }
+    }
+    const paths = new Map<string, ReadonlyArray<Step>>()
+    Array.forEach(layerAt(0), id =>
+      paths.set(id, Array.take(nodeOf(id).trace, 1)),
+    )
+    Array.forEach(Array.range(0, depth), distance => {
+      Array.forEach(layerAt(distance), id => {
+        const node = nodeOf(id)
+        const trace = paths.get(id) ?? []
+        Array.forEach(program.properties ?? [], property => {
+          if (property.state !== undefined && !property.state(node)) {
+            report({ property: property.name, trace, state: id })
+          }
+        })
+        if (distance < depth) {
+          Array.forEach(successors(id), step => {
+            const nextTrace = Array.append(trace, step)
+            if (!paths.has(step.to)) {
+              paths.set(step.to, nextTrace)
+            }
+            const message = messages.get(step)
+            if (message !== undefined) {
+              Array.forEach(program.properties ?? [], property => {
+                if (
+                  property.transition !== undefined &&
+                  !property.transition(node, message, nodeOf(step.to))
+                ) {
+                  report({
+                    property: property.name,
+                    trace: nextTrace,
+                    state: step.to,
+                  })
+                }
+              })
+            }
+          })
+        }
+      })
+    })
+    const result = Array.fromIterable(failures.values())
+    checks.set(depth, result)
+    return result
+  }
+
+  const groups = (states: ReadonlyArray<string>): ReadonlyArray<Group> => {
+    const grouped = new Map<unknown, { home: string; states: Array<string> }>()
+    Array.forEach(states, id => {
+      const node = nodeOf(id)
+      const key =
+        node.setup.inputs === undefined
+          ? identity.of(node.model)
+          : inspection(node).screen
+      const known = grouped.get(key)
+      if (known !== undefined) {
+        known.states.push(id)
+      } else {
+        grouped.set(key, { home: id, states: [id] })
+      }
+    })
+    return Array.fromIterable(grouped.values())
+  }
+
   return {
     name: program.name,
+    schedule,
+    budget,
+    propertyNames: Array.map(
+      program.properties ?? [],
+      property => property.name,
+    ),
+    check,
+    groups,
+    grouping: 'Rendered markup for view-driven cases; equal Models otherwise',
     reach,
     successors,
     send,
@@ -431,14 +611,20 @@ export const describe = (atlas: Atlas, depth: number): string => {
       atlas.pending(id),
       ({ name, args }) => `    pending ${name} ${args}`,
     ),
-    `    ${Array.join(
-      Array.map(atlas.successors(id), step => `${step.label} → ${step.to}`),
-      ' · ',
-    )}`,
+    ...Array.match(atlas.successors(id), {
+      onEmpty: () => [],
+      onNonEmpty: steps => [
+        `    ${Array.join(
+          Array.map(steps, step => `${step.label} → ${step.to}`),
+          ' · ',
+        )}`,
+      ],
+    }),
   ]
   return Array.join(
     [
       `# ${atlas.name} · depth ${depth} · ${states.length} states · ${isComplete ? 'complete' : 'incomplete'}`,
+      `# Replies: ${atlas.schedule}; independent response fixtures; exploration threshold: ${atlas.budget} states`,
       ...Array.flatMap(states, stateView),
       '',
     ],

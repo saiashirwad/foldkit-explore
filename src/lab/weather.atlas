@@ -1,4 +1,5 @@
 # Weather · depth 8 · 12 states · complete
+# Replies: oldest; independent response fixtures; exploration threshold: 5000 states
 
 S1  empty
     {"zipCodeInput":"","weather":{"_tag":"Idle"}}

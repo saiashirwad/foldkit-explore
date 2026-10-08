@@ -3,6 +3,9 @@ import * as Weather from './main'
 import { WeatherCases } from './main.cases'
 import * as Release from './release/main'
 import { ReleaseCases } from './release/main.cases'
+import * as Signup from './signup/main'
+import { SignupCases } from './signup/main.cases'
+import { properties } from './signup/properties'
 
 export const weather = Atlas.make({
   name: 'Weather',
@@ -20,4 +23,15 @@ export const release = Atlas.make({
   update: Release.update,
   view: Release.view,
   cases: ReleaseCases,
+})
+
+export const signup = Atlas.make({
+  name: 'Signup',
+  schedule: 'any',
+  properties,
+  Model: Signup.Model,
+  Message: Signup.Message,
+  update: Signup.update,
+  view: Signup.view,
+  cases: SignupCases,
 })

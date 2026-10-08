@@ -60,3 +60,48 @@ In the lab you can:
 | `src/lab/atlas.ts` | A program's memoized state graph: setups, moves, answers, addresses |
 | `src/lab/lab.ts` | The lab itself, a Foldkit program |
 | `src/main.cases.ts`, `src/release/main.cases.ts` | Cases for the two example programs |
+
+## View-driven exploration (Signup)
+
+Signup's cases specify initial plans, a finite `Username` input domain, and
+Command response fixtures. There is no second implementation of its navigation:
+`src/lab/interactions.ts` uses the **public `foldkit/scene` API** to render a Model,
+click enabled buttons (including form submit buttons), and type the configured
+values into editable textboxes. A recording update captures the emitted Messages;
+the atlas then applies the program's real update. It never executes Commands.
+
+This is deliberately a limited environment, **not universal DOM exploration**.
+Selects, checkboxes, links, keyboard/pointer gestures, subscriptions, and custom
+control protocols are not automatically enumerated. A single interaction that emits
+multiple Messages (for example click plus submit) is explicitly rejected rather
+than represented as independent alternative moves. Mount-backed views are not
+supported by the probe: Scene's unresolved-Mount assertions fail rather than
+silently treating their behavior as covered. Existing Weather and Release cases
+still use explicit moves. A setup must choose `inputs` or `moves`, not both.
+
+Programs select `schedule: 'oldest' | 'any'` (default: oldest). Signup allows any
+pending Command to finish. Response fixtures make independent choices each time;
+there is no persistent simulated server or fairness/liveness assumption. Depth
+and the state exploration threshold remain visible. The threshold stops subsequent
+BFS layers; it is not a strict memory cap. “Complete” is relative to the declared
+inputs, responses, and scheduler. Signup's unlimited pending checks still make its
+exploration incomplete.
+
+Typed `Property<Model, Message>` predicates can check states and transitions.
+Signup's predicates live in `src/signup/properties.ts`. `atlas.check(depth)` returns
+one shortest explored counterexample per failing property, using breadth-first
+paths rather than earlier live-click discovery paths. The inspector's Properties
+section shows those traces as clickable steps. A passing bounded check is not a
+proof about all executions.
+
+The gallery groups **equal rendered markup** for view-driven cases (text,
+attributes, properties, classes, styles, and children), not screenshots or computed
+accessibility trees. Other programs use an explicitly labeled equal-Model fallback.
+Grouping never changes graph identity: pending queues and environment references
+remain significant. Choose a group's execution state in the inspector; card actions
+apply to that selected state. Filters still use each state's first discovery trace.
+
+The Scene adapter brings testing-driver code into the lab bundle. A production lab
+build was about 390 kB / 126 kB gzip during implementation; this is the total lab
+bundle, not a measured incremental cost. The usual `bun run build` builds only the
+plain weather entry, so validating the lab requires building `lab.html` explicitly.

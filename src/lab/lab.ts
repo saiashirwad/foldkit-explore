@@ -26,10 +26,14 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-type Card = Readonly<{ slot: string; home: string; state: string }>
+type Card = Readonly<{
+  slot: string
+  home: string
+  state: string
+  states: ReadonlyArray<string>
+}>
 
 const PAGE = 48
-const ANSWER_LIMIT = 4
 
 const fresh = (program: string): Model => ({
   program,
@@ -79,22 +83,6 @@ export type Message = typeof Message.Type
 // VIEW
 
 const lazyCase = createKeyedLazy()
-
-const pathOf = (trace: ReadonlyArray<Step>): string =>
-  Array.join(
-    Array.map(trace, step => step.label),
-    ' › ',
-  )
-
-const shortLabelOf = (step: Step): string =>
-  Array.match(step.decisions, {
-    onEmpty: () => step.label,
-    onNonEmpty: decisions =>
-      Array.join(
-        Array.map(decisions, ({ option }) => option),
-        ' ',
-      ),
-  })
 
 const filterView = (
   model: Model,
@@ -163,102 +151,41 @@ const depthView = (model: Model, atlas: Atlas, h: HtmlBuilder<Message>): Html =>
     ],
   )
 
-const answerButton = (
-  slot: string,
-  answer: Step,
-  h: HtmlBuilder<Message>,
-): Html =>
-  h.button(
-    [h.OnClick(Message.ClickedStep({ slot, state: answer.to }))],
-    [
-      Array.isReadonlyArrayEmpty(answer.decisions)
-        ? 'answer'
-        : shortLabelOf(answer),
-    ],
-  )
-
-const answersView = (
-  atlas: Atlas,
-  card: Card,
-  h: HtmlBuilder<Message>,
-): Html => {
-  const answers = Array.filter(
-    atlas.successors(card.state),
-    step => step.kind === 'Answer',
-  )
-  return Option.match(Array.head(atlas.pending(card.state)), {
-    onNone: () => h.empty,
-    onSome: ({ name, args }) =>
-      h.div(
-        [h.Class('case-answers')],
-        [
-          h.span([h.Class('case-answers-label'), h.Title(args)], [name]),
-          ...(answers.length > ANSWER_LIMIT
-            ? [
-                h.span(
-                  [h.Class('case-answers-count')],
-                  [`${answers.length} answers`],
-                ),
-              ]
-            : Array.map(answers, answer => answerButton(card.slot, answer, h))),
-        ],
-      ),
-  })
-}
-
-// NOTE: Arguments are primitives so the keyed lazy slot sees an unchanged card
-// as unchanged and skips rendering it.
+// NOTE: Arguments are primitives so unchanged previews keep their lazy slot.
 const caseView = (
   atlas: Atlas,
   slot: string,
-  home: string,
   state: string,
   isSelected: boolean,
   h: HtmlBuilder<Message>,
-): Html => {
-  const card = { slot, home, state }
-  return h.keyed('article')(
-    card.slot,
+): Html =>
+  h.keyed('article')(
+    slot,
+    [h.Class(isSelected ? 'case is-selected' : 'case')],
     [
-      h.Class(isSelected ? 'case is-selected' : 'case'),
-      h.OnClick(Message.ClickedCase({ slot: card.slot })),
-    ],
-    [
-      h.header(
-        [h.Class('case-head'), h.Title(pathOf(atlas.trace(card.state)))],
+      h.div(
+        [h.Class('case-tools')],
         [
-          h.span(
-            [],
+          h.button(
             [
-              card.home === card.state
-                ? h.empty
-                : h.span([h.Class('case-origin')], [`${card.home} › `]),
-              card.state,
+              h.Class('case-inspect'),
+              h.AriaPressed(isSelected ? 'true' : 'false'),
+              h.OnClick(Message.ClickedCase({ slot })),
             ],
+            ['Inspect'],
           ),
-          Option.match(Array.last(atlas.trace(card.state)), {
-            onNone: () => h.empty,
-            onSome: step =>
-              h.span([h.Class('case-step')], [shortLabelOf(step)]),
-          }),
         ],
       ),
       h.div(
         [h.Class('case-preview')],
         [
-          atlas.render(card.state, card.slot, h, caseMessage =>
-            Message.InteractedWithCase({
-              slot: card.slot,
-              state: card.state,
-              message: caseMessage,
-            }),
+          atlas.render(state, slot, h, caseMessage =>
+            Message.InteractedWithCase({ slot, state, message: caseMessage }),
           ),
         ],
       ),
-      answersView(atlas, card, h),
     ],
   )
-}
 
 const gridView = (
   model: Model,
@@ -278,7 +205,6 @@ const gridView = (
           lazyCase(card.slot, caseView, [
             atlas,
             card.slot,
-            card.home,
             card.state,
             Option.exists(maybeSelected, ({ slot }) => slot === card.slot),
             h,
@@ -326,6 +252,7 @@ const inspectorSection = (
 const inspectorView = (
   atlas: Atlas,
   card: Card,
+  depth: number,
   h: HtmlBuilder<Message>,
 ): Html =>
   h.aside(
@@ -350,6 +277,76 @@ const inspectorView = (
               h.OnClick(Message.ClickedPin({ state: card.state })),
             ],
             ['Pin'],
+          ),
+        ],
+      ),
+      h.details(
+        [],
+        [
+          h.summary(
+            [],
+            [`${card.states.length} execution states in this group`],
+          ),
+          ...Array.map(card.states, state =>
+            h.button(
+              [
+                h.Class(state === card.state ? 'row is-current' : 'row'),
+                h.OnClick(Message.ClickedStep({ slot: card.slot, state })),
+              ],
+              [state, ` · ${atlas.pending(state).length} pending`],
+            ),
+          ),
+        ],
+      ),
+      h.details(
+        [],
+        [
+          h.summary([], ['Exploration scope']),
+          h.p(
+            [],
+            [
+              `Replies: ${atlas.schedule === 'any' ? 'any pending Command' : 'oldest pending Command'}. Response fixtures choose independently on each answer.`,
+            ],
+          ),
+          h.p(
+            [],
+            [
+              `Depth ${depth}; exploration threshold ${atlas.budget} states; ${atlas.reach(depth).isComplete ? 'complete within declared environment' : 'incomplete'}.`,
+            ],
+          ),
+          h.p([], [atlas.grouping]),
+          h.p(
+            [],
+            [
+              'View-driven moves cover enabled buttons and configured text inputs only. Other programs use declared moves.',
+            ],
+          ),
+        ],
+      ),
+      h.details(
+        [],
+        [
+          h.summary(
+            [],
+            [`Properties · ${atlas.check(depth).length} violations`],
+          ),
+          h.p(
+            [],
+            [
+              'Checks cover reached states and transitions within the selected depth, not all possible executions.',
+            ],
+          ),
+          ...Array.map(atlas.propertyNames, name => h.p([], [name])),
+          ...Array.map(atlas.check(depth), failure =>
+            h.section(
+              [],
+              [
+                h.h4([], [failure.property]),
+                ...Array.map(failure.trace, step =>
+                  stepRow(card.slot, step, step.to === card.state, h),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -394,13 +391,20 @@ export const makeLab = (atlases: Array.NonEmptyReadonlyArray<Atlas>) => {
     )
 
   const cardsOf = (model: Model, atlas: Atlas): ReadonlyArray<Card> => {
-    const place = (slot: string, home: string): Card => ({
+    const place = (
+      slot: string,
+      home: string,
+      states: ReadonlyArray<string>,
+    ): Card => ({
       slot,
       home,
+      states,
       state: pipe(
         Record.get(model.positions, slot),
         Option.flatMap(atlas.resolve),
-        Option.getOrElse(() => home),
+        Option.getOrElse(() =>
+          Option.getOrElse(Array.head(states), () => home),
+        ),
       ),
     })
     return Array.filter(
@@ -408,12 +412,18 @@ export const makeLab = (atlases: Array.NonEmptyReadonlyArray<Atlas>) => {
         ...Array.getSomes(
           Array.map(model.pins, pin =>
             Option.map(atlas.resolve(pin.address), home =>
-              place(pin.slot, home),
+              place(pin.slot, home, [home]),
             ),
           ),
         ),
-        ...Array.map(atlas.reach(model.depth).states, home =>
-          place(atlas.key(home), home),
+        ...Array.map(atlas.groups(atlas.reach(model.depth).states), group =>
+          place(
+            atlas.key(group.home),
+            group.home,
+            Array.filter(group.states, state =>
+              isMatching(atlas.trace(state), model.where),
+            ),
+          ),
         ),
       ],
       card => isMatching(atlas.trace(card.state), model.where),
@@ -523,7 +533,9 @@ export const makeLab = (atlases: Array.NonEmptyReadonlyArray<Atlas>) => {
           [
             h.span(
               [h.Class('lab-count')],
-              [`${cards.length} ${cards.length === 1 ? 'state' : 'states'}`],
+              [
+                `${cards.length} groups · ${atlas.reach(model.depth).states.length} states · ${atlas.reach(model.depth).isComplete ? 'complete' : 'incomplete'}`,
+              ],
             ),
             depthView(model, atlas, h),
             h.button(
@@ -556,7 +568,7 @@ export const makeLab = (atlases: Array.NonEmptyReadonlyArray<Atlas>) => {
               gridView(model, atlas, cards, maybeSelected, h),
               Option.match(maybeSelected, {
                 onNone: () => h.empty,
-                onSome: card => inspectorView(atlas, card, h),
+                onSome: card => inspectorView(atlas, card, model.depth, h),
               }),
             ],
           ),
