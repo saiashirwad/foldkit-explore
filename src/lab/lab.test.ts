@@ -314,7 +314,7 @@ test('previews contain only the app and Inspect selects the slot for replies', (
     Scene.click(
       Scene.within(
         Scene.selector('aside.inspector'),
-        Scene.role('button', { name: `${answer.label}${answer.to}` }),
+        Scene.role('button', { name: `${answer.label} ${answer.to}` }),
       ),
     ),
     Scene.tap(simulation => {

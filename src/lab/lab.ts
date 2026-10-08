@@ -248,6 +248,23 @@ const gridView = (
     }),
   )
 
+const optionsOf = (step: Step): Step['decisions'] =>
+  step.kind === 'Answer'
+    ? Array.filter(step.decisions, ({ fixture }) => fixture !== 'pending')
+    : []
+
+// NOTE: An Answer's label is its Command, maybe a pending position, then its
+// options. The head is the label without the options.
+const headOf = (step: Step): string => {
+  const options = Array.join(
+    Array.map(optionsOf(step), ({ option }) => option),
+    ' ',
+  )
+  return options !== '' && step.label.endsWith(options)
+    ? step.label.slice(0, -options.length).trimEnd()
+    : step.label
+}
+
 const stepRow = (
   slot: string,
   step: Step,
@@ -257,24 +274,239 @@ const stepRow = (
   h.button(
     [
       h.Class(isCurrent ? 'row is-current' : 'row'),
+      h.AriaLabel(`${step.label} ${step.to}`),
       h.OnClick(Message.ClickedStep({ slot, state: step.to })),
     ],
     [
-      h.span([h.Class('row-label')], [step.label]),
+      h.span(
+        [h.Class('row-label')],
+        Array.match(optionsOf(step), {
+          onEmpty: () => [step.label],
+          onNonEmpty: options => [
+            h.span([h.Class('row-command')], [headOf(step)]),
+            ...Array.map(options, ({ fixture, option }) =>
+              h.span(
+                [h.Class('option'), h.Title(`${fixture}: ${option}`)],
+                [option],
+              ),
+            ),
+          ],
+        }),
+      ),
       h.span([h.Class('row-state')], [step.to]),
     ],
   )
 
+const destinationView = (
+  step: Step,
+  current: string,
+  h: HtmlBuilder<Message>,
+): Html =>
+  step.to === current
+    ? h.span([h.Class('row-state is-same')], ['no change'])
+    : h.span([h.Class('row-state')], [step.to])
+
+type Branch = Readonly<{
+  depth: number
+  decision: Step['decisions'][number]
+  maybeStep: Option.Option<Step>
+}>
+
+type Remaining = Readonly<{ options: Step['decisions']; step: Step }>
+
+// NOTE: Answers that share leading options share branches, so one Command's
+// answers flatten into an outline. A branch ends in a step once its options run
+// out.
+const branchesOf = (
+  remaining: ReadonlyArray<Remaining>,
+  depth: number,
+): ReadonlyArray<Branch> =>
+  Array.isReadonlyArrayNonEmpty(remaining)
+    ? Array.flatMap(
+        Array.groupWith(remaining, (left, right) =>
+          Option.exists(Array.head(left.options), first =>
+            Option.exists(
+              Array.head(right.options),
+              other =>
+                other.fixture === first.fixture &&
+                other.option === first.option,
+            ),
+          ),
+        ),
+        group =>
+          Option.match(Array.head(Array.headNonEmpty(group).options), {
+            onNone: () => [],
+            onSome: decision => {
+              const rest = Array.map(group, ({ options, step }) => ({
+                options: Array.drop(options, 1),
+                step,
+              }))
+              return [
+                {
+                  depth,
+                  decision,
+                  maybeStep: Option.map(
+                    Array.findFirst(rest, ({ options }) =>
+                      Array.isReadonlyArrayEmpty(options),
+                    ),
+                    ({ step }) => step,
+                  ),
+                },
+                ...branchesOf(
+                  Array.filter(rest, ({ options }) =>
+                    Array.isReadonlyArrayNonEmpty(options),
+                  ),
+                  depth + 1,
+                ),
+              ]
+            },
+          }),
+      )
+    : []
+
+const answersView = (
+  slot: string,
+  current: string,
+  steps: ReadonlyArray<Step>,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.div(
+    [h.Class('tree')],
+    Array.map(
+      branchesOf(
+        Array.map(steps, step => ({ options: optionsOf(step), step })),
+        0,
+      ),
+      ({ depth, decision, maybeStep }) => {
+        const label = [
+          h.span([h.Class('tree-key')], [decision.fixture]),
+          h.span([h.Class('tree-value')], [decision.option]),
+        ]
+        const style = h.Style({ '--depth': `${depth}` })
+        return Option.match(maybeStep, {
+          onNone: () => h.div([h.Class('tree-row'), style], label),
+          onSome: step =>
+            h.button(
+              [
+                h.Class('tree-row is-leaf'),
+                style,
+                h.AriaLabel(`${step.label} ${step.to}`),
+                h.OnClick(Message.ClickedStep({ slot, state: step.to })),
+              ],
+              [...label, destinationView(step, current, h)],
+            ),
+        })
+      },
+    ),
+  )
+
+const nextView = (
+  slot: string,
+  current: string,
+  steps: ReadonlyArray<Step>,
+  h: HtmlBuilder<Message>,
+): ReadonlyArray<Html> => {
+  const moves = Array.filter(steps, step =>
+    Array.isReadonlyArrayEmpty(optionsOf(step)),
+  )
+  const answers = Array.filter(steps, step =>
+    Array.isReadonlyArrayNonEmpty(optionsOf(step)),
+  )
+  return [
+    ...(Array.isReadonlyArrayNonEmpty(moves)
+      ? [
+          h.div(
+            [h.Class('next-group')],
+            [
+              h.div([h.Class('next-title')], ['User actions']),
+              ...Array.map(moves, step =>
+                h.button(
+                  [
+                    h.Class('row'),
+                    h.AriaLabel(`${step.label} ${step.to}`),
+                    h.OnClick(Message.ClickedStep({ slot, state: step.to })),
+                  ],
+                  [
+                    h.span([h.Class('row-label')], [step.label]),
+                    destinationView(step, current, h),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ]
+      : []),
+    ...(Array.isReadonlyArrayNonEmpty(answers)
+      ? Array.map(
+          Array.groupWith(
+            answers,
+            (left, right) => headOf(left) === headOf(right),
+          ),
+          group =>
+            h.div(
+              [h.Class('next-group')],
+              [
+                h.div(
+                  [h.Class('next-title')],
+                  [
+                    h.code([], [headOf(Array.headNonEmpty(group))]),
+                    ' replies with',
+                  ],
+                ),
+                answersView(slot, current, group, h),
+              ],
+            ),
+        )
+      : []),
+  ]
+}
+
+const JSON_TOKEN =
+  /("(?:\\.|[^"\\])*"|\btrue\b|\bfalse\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/
+
+const tokenKind = (parts: ReadonlyArray<string>, index: number): string => {
+  const token = parts[index] ?? ''
+  if (!token.startsWith('"')) {
+    return /^[tfn]/.test(token) ? 'literal' : 'number'
+  }
+  if ((parts[index + 1] ?? '').trimStart().startsWith(':')) {
+    return 'key'
+  }
+  return parts[index - 2] === '"_tag"' ? 'tag' : 'string'
+}
+
+// NOTE: Splitting on a capturing pattern alternates text and tokens, so odd
+// parts are tokens. Objects holding only a tag fit on one line.
+const modelView = (value: unknown, h: HtmlBuilder<Message>): Html => {
+  const parts = JSON.stringify(value, null, 2)
+    .replace(/\{\n\s*("_tag": "[^"]*")\n\s*\}/g, '{ $1 }')
+    .split(JSON_TOKEN)
+  return h.pre(
+    [h.Class('inspector-model')],
+    Array.map(parts, (part, index) =>
+      index % 2 === 0
+        ? part
+        : h.span([h.Class(`json-${tokenKind(parts, index)}`)], [part]),
+    ),
+  )
+}
+
 const inspectorSection = (
+  kind: string,
   title: string,
+  hint: string,
   children: ReadonlyArray<Html>,
   h: HtmlBuilder<Message>,
 ): Html =>
   Array.isReadonlyArrayEmpty(children)
     ? h.empty
     : h.section(
-        [h.Class(`inspector-section is-${title.toLowerCase()}`)],
-        [h.h4([], [title]), ...children],
+        [h.Class(`inspector-section is-${kind}`)],
+        [
+          h.h4([], [title]),
+          hint === '' ? h.empty : h.p([h.Class('inspector-hint')], [hint]),
+          ...children,
+        ],
       )
 
 const inspectorDetails = (
@@ -300,13 +532,28 @@ const inspectorView = (
 ): Html => {
   const failures = atlas.check(depth)
   const { isComplete } = atlas.reach(depth, search)
+  const trace = atlas.trace(card.state)
+  const distance = trace.length - 1
   return h.aside(
     [h.Class('inspector'), h.AriaLabel('Selected state')],
     [
       h.header(
         [h.Class('inspector-head')],
         [
-          h.strong([], [card.state]),
+          h.div(
+            [h.Class('inspector-title')],
+            [
+              h.strong([], [card.state]),
+              h.span(
+                [],
+                [
+                  distance === 0
+                    ? 'A starting state'
+                    : `${distance} ${distance === 1 ? 'step' : 'steps'} from the start`,
+                ],
+              ),
+            ],
+          ),
           card.home === card.state
             ? h.empty
             : h.button(
@@ -326,52 +573,72 @@ const inspectorView = (
         ],
       ),
       inspectorSection(
-        'Trace',
-        Array.map(atlas.trace(card.state), step =>
+        'trace',
+        'How it got here',
+        '',
+        Array.map(trace, step =>
           stepRow(card.slot, step, step.to === card.state, h),
         ),
         h,
       ),
       inspectorSection(
-        'Pending',
+        'pending',
+        'Waiting on',
+        'In-flight Commands. Their replies are listed below.',
         Array.map(atlas.pending(card.state), ({ name, args }) =>
-          h.code([h.Class('inspector-command')], [`${name} ${args}`]),
+          h.div(
+            [h.Class('pending')],
+            [
+              h.code([], [name]),
+              args === '{}'
+                ? h.empty
+                : h.code([h.Class('pending-args')], [args]),
+            ],
+          ),
         ),
         h,
       ),
       inspectorSection(
-        'Next',
-        Array.map(atlas.successors(card.state), step =>
-          stepRow(card.slot, step, false, h),
-        ),
+        'next',
+        'What can happen next',
+        'Click one to step this preview there.',
+        nextView(card.slot, card.state, atlas.successors(card.state), h),
         h,
       ),
       card.states.length > 1
         ? inspectorDetails(
-            'Group',
+            'Same screen',
             `${card.states.length} states`,
-            Array.map(card.states, state =>
-              h.button(
+            [
+              h.p(
+                [],
                 [
-                  h.Class(state === card.state ? 'row is-current' : 'row'),
-                  h.OnClick(Message.ClickedStep({ slot: card.slot, state })),
-                ],
-                [
-                  h.span([h.Class('row-label')], [state]),
-                  h.span(
-                    [h.Class('row-state')],
-                    [`${atlas.pending(state).length} pending`],
-                  ),
+                  'These states render identically but differ in their Model or in-flight Commands.',
                 ],
               ),
-            ),
+              ...Array.map(card.states, state =>
+                h.button(
+                  [
+                    h.Class(state === card.state ? 'row is-current' : 'row'),
+                    h.OnClick(Message.ClickedStep({ slot: card.slot, state })),
+                  ],
+                  [
+                    h.span([h.Class('row-label')], [state]),
+                    h.span(
+                      [h.Class('row-state')],
+                      [`${atlas.pending(state).length} in flight`],
+                    ),
+                  ],
+                ),
+              ),
+            ],
             h,
           )
         : h.empty,
       inspectorDetails(
         'Model',
         '',
-        [h.pre([], [JSON.stringify(atlas.encode(card.state), null, 2)])],
+        [modelView(atlas.encode(card.state), h)],
         h,
       ),
       Array.isReadonlyArrayEmpty(atlas.propertyNames)
@@ -421,7 +688,7 @@ const inspectorView = (
             h,
           ),
       inspectorDetails(
-        'Scope',
+        'About this search',
         isComplete ? 'complete' : 'incomplete',
         [
           h.p(

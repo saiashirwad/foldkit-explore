@@ -214,7 +214,7 @@
 
   .lab-workspace {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-columns: minmax(0, 1fr) 380px;
     gap: 20px;
     align-items: start;
     padding: 20px 24px 48px;
@@ -335,14 +335,23 @@
     display: flex;
     align-items: center;
     gap: 2px;
-    padding: 10px 10px 10px 16px;
+    padding: 12px 10px 12px 16px;
     background: #fff;
     border-bottom: 1px solid var(--line);
   }
 
-  .inspector-head strong {
+  .inspector-title {
+    display: grid;
     margin-right: auto;
-    font: 600 13px var(--mono);
+  }
+
+  .inspector-title strong {
+    font: 600 14px var(--mono);
+  }
+
+  .inspector-title span {
+    color: var(--muted);
+    font-size: 11.5px;
   }
 
   .inspector-section,
@@ -352,32 +361,44 @@
   }
 
   .inspector-section {
-    padding-block: 12px;
+    padding-block: 14px;
   }
 
   .inspector-details[open] {
-    padding-bottom: 12px;
+    padding-bottom: 14px;
   }
 
   .inspector-details:last-child {
     border-bottom: 0;
   }
 
-  /* NOTE: Section titles and collapsible summaries share one label style. */
+  /* NOTE: Section titles and collapsible summaries share one style. */
   .inspector h4,
   .inspector summary {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 0 6px 6px;
-    font: 500 10px var(--mono);
+    padding: 0 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .inspector h4 {
+    margin-bottom: 8px;
+  }
+
+  .inspector-hint {
+    margin: -6px 0 10px;
+    padding: 0 6px;
     color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
+    font-size: 11.5px;
   }
 
   .inspector summary {
     padding-block: 12px;
+    font-weight: 500;
+    color: #4b4e5e;
     list-style: none;
     cursor: pointer;
     user-select: none;
@@ -400,23 +421,18 @@
     transform: none;
   }
 
-  .inspector summary:hover {
+  .inspector summary:hover,
+  .inspector-details[open] > summary {
     color: var(--ink);
   }
 
   .inspector-note {
     margin-left: auto;
-    text-transform: none;
-    letter-spacing: 0;
+    font: 400 11px var(--mono);
     color: var(--faint);
   }
 
-  .inspector-command {
-    display: block;
-    padding: 2px 6px;
-    font: 11px var(--mono);
-    overflow-wrap: anywhere;
-  }
+  /* ROWS */
 
   .lab .row {
     width: 100%;
@@ -440,7 +456,21 @@
 
   .row-label {
     flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 5px;
     overflow-wrap: anywhere;
+  }
+
+  .row-command {
+    font: 11px var(--mono);
+  }
+
+  .option + .option::before {
+    content: '·';
+    margin-right: 5px;
+    color: var(--faint);
   }
 
   .row-state {
@@ -449,11 +479,18 @@
     white-space: nowrap;
   }
 
+  .row-state.is-same {
+    font:
+      italic 11px -apple-system,
+      BlinkMacSystemFont,
+      sans-serif;
+  }
+
   .row.is-current .row-state {
     color: var(--accent);
   }
 
-  /* NOTE: The trace reads as a timeline: a dot per step on one rail. */
+  /* NOTE: The path reads as a timeline: a dot per step on one rail. */
   .is-trace .row {
     position: relative;
     padding-left: 22px;
@@ -487,8 +524,102 @@
     background: var(--accent);
   }
 
-  .is-next .row-state::before {
+  /* WAITING ON */
+
+  .pending {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 3px 6px;
+    font: 11px var(--mono);
+  }
+
+  .pending::before {
+    content: '';
+    flex: none;
+    align-self: center;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #e5a50a;
+    box-shadow: 0 0 0 3px #e5a50a26;
+  }
+
+  .pending-args {
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+
+  /* NEXT */
+
+  .next-group + .next-group {
+    margin-top: 14px;
+  }
+
+  .next-title {
+    padding: 0 6px 4px;
+    color: var(--muted);
+    font-size: 11.5px;
+  }
+
+  .next-title code {
+    color: var(--ink);
+    font: 11px var(--mono);
+  }
+
+  .next-group .row-state:not(.is-same)::before {
     content: '→ ';
+  }
+
+  /* NOTE: An outline of a Command's answers. Each level indents 16px, and a
+     guide line marks every ancestor level. */
+  .tree {
+    --indent: 16px;
+  }
+
+  .tree-row {
+    position: relative;
+    width: 100%;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 4px 6px 4px calc(6px + var(--depth) * var(--indent));
+    border-radius: 6px;
+    text-align: left;
+    font-size: 12px;
+  }
+
+  .tree-row::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 12px;
+    width: calc(var(--depth) * var(--indent));
+    background: repeating-linear-gradient(
+      to right,
+      var(--line) 0 1px,
+      transparent 1px var(--indent)
+    );
+  }
+
+  .lab .tree-row.is-leaf:hover {
+    background-color: var(--soft);
+  }
+
+  .tree-key {
+    color: var(--muted);
+    font: 10.5px var(--mono);
+  }
+
+  .tree-value {
+    color: var(--ink);
+  }
+
+  .tree-row:not(.is-leaf) .tree-value {
+    color: #4b4e5e;
+  }
+
+  .tree-row .row-state {
+    margin-left: auto;
   }
 
   .inspector-details p {
@@ -499,6 +630,10 @@
 
   .inspector-details p + p {
     margin-top: 6px;
+  }
+
+  .inspector-details p:has(+ .row) {
+    margin-bottom: 8px;
   }
 
   .inspector-details ul {
@@ -533,14 +668,38 @@
     margin-bottom: 10px;
   }
 
+  /* MODEL */
+
+  .json-key {
+    color: #4a55a2;
+  }
+
+  .json-string {
+    color: #2c7a4b;
+  }
+
+  .json-tag {
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .json-number {
+    color: #b45309;
+  }
+
+  .json-literal {
+    color: #b0337a;
+  }
+
   .inspector pre {
     margin: 0 6px;
     padding: 10px 12px;
     max-height: 320px;
     overflow: auto;
     border-radius: 8px;
-    background: var(--soft);
-    color: var(--ink);
+    background: #fafafc;
+    box-shadow: inset 0 0 0 1px var(--line);
+    color: var(--muted);
     font: 10.5px/1.6 var(--mono);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
