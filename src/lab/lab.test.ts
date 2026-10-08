@@ -248,13 +248,14 @@ test('an unmoved group retains its slot when the filter selects a different memb
       if (card !== undefined) {
         expect(Scene.textContent(card)).not.toContain(pricing)
         expect(Scene.textContent(card)).toContain('Inspect')
-        const inspector = Option.getOrThrow(Scene.find(simulation.html, 'aside.inspector'))
+        const inspector = Option.getOrThrow(
+          Scene.find(simulation.html, 'aside.inspector'),
+        )
         expect(Scene.textContent(inspector)).toContain(pricing)
       }
     }),
   )
 })
-
 
 test('previews contain only the app and Inspect selects the slot for replies', () => {
   const atlas = make({
@@ -267,40 +268,107 @@ test('previews contain only the app and Inspect selects the slot for replies', (
     schedule: 'any',
   })
   const lab = makeLab([atlas])
-  const group = Option.getOrThrow(Array.findFirst(
-    atlas.groups(atlas.reach(1).states),
-    group => atlas.pending(group.home).length > 0,
-  ))
-  const slot = atlas.key(group.home)
-  const card = Scene.filter(Scene.selector('article.case'), node => node.key === slot)
+  const group = Option.getOrThrow(
+    Array.findFirst(
+      atlas.groups(atlas.reach(1).states),
+      group => atlas.pending(group.home).length > 0,
+    ),
+  )
+  const index = atlas
+    .groups(atlas.reach(1).states)
+    .findIndex(candidate => candidate.home === group.home)
+  const card = Scene.nth(index)(Scene.all.selector('article.case'))
   const inspect = Scene.within(card, Scene.role('button', { name: 'Inspect' }))
-  const answer = Option.getOrThrow(Array.findFirst(
-    atlas.successors(group.home),
-    step => step.kind === 'Answer' && step.label.endsWith(' free'),
-  ))
+  const answer = Option.getOrThrow(
+    Array.findFirst(
+      atlas.successors(group.home),
+      step => step.kind === 'Answer' && step.label.endsWith(' free'),
+    ),
+  )
   Scene.scene(
     lab,
     Scene.given(lab.init().model),
     Scene.tap(simulation => {
-      Array.forEach(Scene.findAll(simulation.html, '.case-preview'), preview => {
-        expect(Scene.textContent(preview)).not.toMatch(/executions|CheckUsername|Inspect|S\d+/)
-        expect(Scene.findAll(preview, '.case-tools')).toEqual([])
-      })
+      Array.forEach(
+        Scene.findAll(simulation.html, '.case-preview'),
+        preview => {
+          expect(Scene.textContent(preview)).not.toMatch(
+            /executions|CheckUsername|Inspect|S\d+/,
+          )
+          expect(Scene.findAll(preview, '.case-tools')).toEqual([])
+        },
+      )
       expect(Scene.findAll(simulation.html, '.case-head')).toEqual([])
       expect(Scene.findAll(simulation.html, '.case-answers')).toEqual([])
     }),
     Scene.click(inspect),
     Scene.tap(simulation => {
-      expect(simulation.model.maybeSelected).toEqual(Option.some(slot))
+      expect(
+        Scene.textContent(
+          Option.getOrThrow(
+            Scene.find(simulation.html, '.inspector-head strong'),
+          ),
+        ),
+      ).toBe(group.home)
     }),
-    Scene.click(Scene.within(Scene.selector('aside.inspector'), Scene.role('button', { name: `${answer.label}${answer.to}` }))),
+    Scene.click(
+      Scene.within(
+        Scene.selector('aside.inspector'),
+        Scene.role('button', { name: `${answer.label}${answer.to}` }),
+      ),
+    ),
     Scene.tap(simulation => {
-      expect(Option.getOrThrow(atlas.resolve(simulation.model.positions[slot] ?? []))).toBe(answer.to)
+      expect(
+        Scene.textContent(
+          Option.getOrThrow(
+            Scene.find(simulation.html, '.inspector-head strong'),
+          ),
+        ),
+      ).toBe(answer.to)
+      expect(
+        Scene.textContent(Option.getOrThrow(card(simulation.html))),
+      ).toContain('Available')
     }),
     Scene.type(Scene.within(card, Scene.label('Username')), 'grace'),
     Scene.tap(simulation => {
-      const state = Option.getOrThrow(atlas.resolve(simulation.model.positions[slot] ?? []))
-      expect(atlas.encode(state)).toMatchObject({ username: 'grace' })
+      const preview = Option.getOrThrow(card(simulation.html))
+      expect(Option.isSome(Scene.getByDisplayValue('grace')(preview))).toBe(
+        true,
+      )
+      expect(Scene.textContent(preview)).toContain('Checking')
     }),
   )
+})
+
+test('the search control orders the gallery and survives a program switch', () => {
+  const atlas = make({
+    name: 'Signup',
+    Model: Signup.Model,
+    Message: Signup.Message,
+    update: Signup.update,
+    view: Signup.view,
+    cases: SignupCases,
+    schedule: 'any',
+  })
+  const lab = makeLab([atlas])
+  Scene.scene(
+    lab,
+    Scene.given(lab.init().model),
+    Scene.click(Scene.role('button', { name: 'DFS' })),
+    Scene.tap(simulation => {
+      expect(
+        Array.map(
+          Scene.findAll(simulation.html, '.lab-search [aria-pressed="true"]'),
+          Scene.textContent,
+        ),
+      ).toEqual(['DFS'])
+    }),
+  )
+  const model = lab.update(
+    lab.update(lab.init().model, Message.SelectedSearch({ search: 'random' }))
+      .model,
+    Message.SelectedProgram({ program: 'Signup' }),
+  ).model
+  expect(model.search).toBe('random')
+  expect(lab.update(model, Message.ClickedReset()).model.search).toBe('breadth')
 })

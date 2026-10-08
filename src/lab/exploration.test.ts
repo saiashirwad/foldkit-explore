@@ -156,3 +156,23 @@ test('counterexamples use shortest explored paths, not earlier live-event discov
     ['state', ['start', 'short', 'finish']],
   ])
 })
+
+test('depth-first reaches the breadth-first states at the same depth, in its own order', () => {
+  const atlas = signup()
+  const breadth = atlas.reach(4)
+  const depth = atlas.reach(4, 'depth')
+  expect(new Set(depth.states)).toEqual(new Set(breadth.states))
+  expect(depth.states).not.toEqual(breadth.states)
+  expect(depth.isComplete).toBe(breadth.isComplete)
+})
+
+test('random walks repeat exactly, and deeper walks extend shallower ones', () => {
+  const atlas = signup()
+  const shallow = atlas.reach(3, 'random')
+  const deep = atlas.reach(5, 'random')
+  expect(signup().reach(3, 'random').states).toEqual(shallow.states)
+  expect(Array.every(shallow.states, id => deep.states.includes(id))).toBe(true)
+  expect(
+    Array.every(deep.states, id => atlas.reach(5).states.includes(id)),
+  ).toBe(true)
+})

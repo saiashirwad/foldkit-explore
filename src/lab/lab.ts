@@ -9,7 +9,7 @@ import {
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 
-import { Address, type Atlas, type Step } from './atlas'
+import { Address, type Atlas, Search, type Step } from './atlas'
 
 // MODEL
 
@@ -19,6 +19,7 @@ export const Model = Schema.Struct({
   program: Schema.String,
   where: Schema.Record(Schema.String, Schema.String),
   depth: Schema.Number,
+  search: Search,
   limit: Schema.Number,
   positions: Schema.Record(Schema.String, Address),
   pins: Schema.Array(Pin),
@@ -35,10 +36,11 @@ type Card = Readonly<{
 
 const PAGE = 48
 
-const fresh = (program: string): Model => ({
+const fresh = (program: string, search: Search = 'breadth'): Model => ({
   program,
   where: {},
   depth: 1,
+  search,
   limit: PAGE,
   positions: {},
   pins: [],
@@ -66,6 +68,7 @@ export const Message = defineMessageUnion({
   ClearedFilter: { fixture: Schema.String },
   ClickedDeeper: {},
   ClickedShallower: {},
+  SelectedSearch: { search: Search },
   ClickedShowMore: {},
   ClickedReset: {},
   ClickedCase: { slot: Schema.String },
@@ -143,12 +146,37 @@ const depthView = (model: Model, atlas: Atlas, h: HtmlBuilder<Message>): Html =>
       h.button(
         [
           h.AriaLabel('More steps'),
-          h.Disabled(atlas.reach(model.depth).isComplete),
+          h.Disabled(atlas.reach(model.depth, model.search).isComplete),
           h.OnClick(Message.ClickedDeeper()),
         ],
         ['+'],
       ),
     ],
+  )
+
+const searches: ReadonlyArray<readonly [Search, string, string]> = [
+  [
+    'breadth',
+    'BFS',
+    'Breadth-first: every state one step away before the next',
+  ],
+  ['depth', 'DFS', 'Depth-first: follow each path to the depth limit'],
+  ['random', 'Random', 'Random walks: 32 seeded walks up to the depth limit'],
+]
+
+const searchView = (model: Model, h: HtmlBuilder<Message>): Html =>
+  h.div(
+    [h.Class('lab-search'), h.Role('group'), h.AriaLabel('Search')],
+    Array.map(searches, ([search, label, title]) =>
+      h.button(
+        [
+          h.Title(title),
+          h.AriaPressed(search === model.search ? 'true' : 'false'),
+          h.OnClick(Message.SelectedSearch({ search })),
+        ],
+        [label],
+      ),
+    ),
   )
 
 // NOTE: Arguments are primitives so unchanged previews keep their lazy slot.
@@ -245,17 +273,34 @@ const inspectorSection = (
   Array.isReadonlyArrayEmpty(children)
     ? h.empty
     : h.section(
-        [h.Class('inspector-section')],
+        [h.Class(`inspector-section is-${title.toLowerCase()}`)],
         [h.h4([], [title]), ...children],
       )
+
+const inspectorDetails = (
+  title: string,
+  note: string,
+  children: ReadonlyArray<Html>,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.details(
+    [h.Class('inspector-details')],
+    [
+      h.summary([], [title, h.span([h.Class('inspector-note')], [note])]),
+      ...children,
+    ],
+  )
 
 const inspectorView = (
   atlas: Atlas,
   card: Card,
   depth: number,
+  search: Search,
   h: HtmlBuilder<Message>,
-): Html =>
-  h.aside(
+): Html => {
+  const failures = atlas.check(depth)
+  const { isComplete } = atlas.reach(depth, search)
+  return h.aside(
     [h.Class('inspector'), h.AriaLabel('Selected state')],
     [
       h.header(
@@ -280,76 +325,6 @@ const inspectorView = (
           ),
         ],
       ),
-      h.details(
-        [],
-        [
-          h.summary(
-            [],
-            [`${card.states.length} execution states in this group`],
-          ),
-          ...Array.map(card.states, state =>
-            h.button(
-              [
-                h.Class(state === card.state ? 'row is-current' : 'row'),
-                h.OnClick(Message.ClickedStep({ slot: card.slot, state })),
-              ],
-              [state, ` · ${atlas.pending(state).length} pending`],
-            ),
-          ),
-        ],
-      ),
-      h.details(
-        [],
-        [
-          h.summary([], ['Exploration scope']),
-          h.p(
-            [],
-            [
-              `Replies: ${atlas.schedule === 'any' ? 'any pending Command' : 'oldest pending Command'}. Response fixtures choose independently on each answer.`,
-            ],
-          ),
-          h.p(
-            [],
-            [
-              `Depth ${depth}; exploration threshold ${atlas.budget} states; ${atlas.reach(depth).isComplete ? 'complete within declared environment' : 'incomplete'}.`,
-            ],
-          ),
-          h.p([], [atlas.grouping]),
-          h.p(
-            [],
-            [
-              'View-driven moves cover enabled buttons and configured text inputs only. Other programs use declared moves.',
-            ],
-          ),
-        ],
-      ),
-      h.details(
-        [],
-        [
-          h.summary(
-            [],
-            [`Properties · ${atlas.check(depth).length} violations`],
-          ),
-          h.p(
-            [],
-            [
-              'Checks cover reached states and transitions within the selected depth, not all possible executions.',
-            ],
-          ),
-          ...Array.map(atlas.propertyNames, name => h.p([], [name])),
-          ...Array.map(atlas.check(depth), failure =>
-            h.section(
-              [],
-              [
-                h.h4([], [failure.property]),
-                ...Array.map(failure.trace, step =>
-                  stepRow(card.slot, step, step.to === card.state, h),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
       inspectorSection(
         'Trace',
         Array.map(atlas.trace(card.state), step =>
@@ -371,15 +346,121 @@ const inspectorView = (
         ),
         h,
       ),
-      h.details(
-        [],
+      card.states.length > 1
+        ? inspectorDetails(
+            'Group',
+            `${card.states.length} states`,
+            Array.map(card.states, state =>
+              h.button(
+                [
+                  h.Class(state === card.state ? 'row is-current' : 'row'),
+                  h.OnClick(Message.ClickedStep({ slot: card.slot, state })),
+                ],
+                [
+                  h.span([h.Class('row-label')], [state]),
+                  h.span(
+                    [h.Class('row-state')],
+                    [`${atlas.pending(state).length} pending`],
+                  ),
+                ],
+              ),
+            ),
+            h,
+          )
+        : h.empty,
+      inspectorDetails(
+        'Model',
+        '',
+        [h.pre([], [JSON.stringify(atlas.encode(card.state), null, 2)])],
+        h,
+      ),
+      Array.isReadonlyArrayEmpty(atlas.propertyNames)
+        ? h.empty
+        : inspectorDetails(
+            'Properties',
+            failures.length === 0
+              ? `${atlas.propertyNames.length} hold`
+              : `${failures.length} failing`,
+            [
+              h.ul(
+                [],
+                Array.map(atlas.propertyNames, name =>
+                  h.li(
+                    [
+                      h.Class(
+                        Array.some(
+                          failures,
+                          failure => failure.property === name,
+                        )
+                          ? 'is-failing'
+                          : 'is-holding',
+                      ),
+                    ],
+                    [name],
+                  ),
+                ),
+              ),
+              ...Array.map(failures, failure =>
+                h.section(
+                  [],
+                  [
+                    h.h4([], [failure.property]),
+                    ...Array.map(failure.trace, step =>
+                      stepRow(card.slot, step, step.to === card.state, h),
+                    ),
+                  ],
+                ),
+              ),
+              h.p(
+                [],
+                [
+                  'Checked over reached states and transitions within the selected depth, not all possible executions.',
+                ],
+              ),
+            ],
+            h,
+          ),
+      inspectorDetails(
+        'Scope',
+        isComplete ? 'complete' : 'incomplete',
         [
-          h.summary([], ['Model']),
-          h.pre([], [JSON.stringify(atlas.encode(card.state), null, 2)]),
+          h.p(
+            [],
+            [
+              `Replies: ${atlas.schedule === 'any' ? 'any pending Command' : 'oldest pending Command'}. Response fixtures choose independently on each answer.`,
+            ],
+          ),
+          h.p(
+            [],
+            [
+              `${Option.getOrElse(
+                Option.map(
+                  Array.findFirst(searches, ([key]) => key === search),
+                  ([, , title]) => title,
+                ),
+                () => search,
+              )}.`,
+            ],
+          ),
+          h.p(
+            [],
+            [
+              `Depth ${depth}; exploration threshold ${atlas.budget} states; ${isComplete ? 'complete within declared environment' : 'incomplete'}.`,
+            ],
+          ),
+          h.p([], [atlas.grouping]),
+          h.p(
+            [],
+            [
+              'View-driven moves cover enabled buttons and configured text inputs only. Other programs use declared moves.',
+            ],
+          ),
         ],
+        h,
       ),
     ],
   )
+}
 
 // LAB
 
@@ -416,14 +497,16 @@ export const makeLab = (atlases: Array.NonEmptyReadonlyArray<Atlas>) => {
             ),
           ),
         ),
-        ...Array.map(atlas.groups(atlas.reach(model.depth).states), group =>
-          place(
-            atlas.key(group.home),
-            group.home,
-            Array.filter(group.states, state =>
-              isMatching(atlas.trace(state), model.where),
+        ...Array.map(
+          atlas.groups(atlas.reach(model.depth, model.search).states),
+          group =>
+            place(
+              atlas.key(group.home),
+              group.home,
+              Array.filter(group.states, state =>
+                isMatching(atlas.trace(state), model.where),
+              ),
             ),
-          ),
         ),
       ],
       card => isMatching(atlas.trace(card.state), model.where),
@@ -447,7 +530,9 @@ export const makeLab = (atlases: Array.NonEmptyReadonlyArray<Atlas>) => {
 
   const update = (model: Model, message: Message) =>
     Message.match<Update.Return<Model, Message>>(message, {
-      SelectedProgram: ({ program }) => ({ model: fresh(program) }),
+      SelectedProgram: ({ program }) => ({
+        model: fresh(program, model.search),
+      }),
       SelectedFilter: ({ fixture, option }) => ({
         model: modifyFields(model, {
           where: where => Record.set(where, fixture, option),
@@ -464,6 +549,9 @@ export const makeLab = (atlases: Array.NonEmptyReadonlyArray<Atlas>) => {
       }),
       ClickedShallower: () => ({
         model: modifyFields(model, { depth: depth => Math.max(0, depth - 1) }),
+      }),
+      SelectedSearch: ({ search }) => ({
+        model: modifyFields(model, { search: () => search, limit: () => PAGE }),
       }),
       ClickedShowMore: () => ({
         model: modifyFields(model, { limit: limit => limit + PAGE }),
@@ -534,9 +622,10 @@ export const makeLab = (atlases: Array.NonEmptyReadonlyArray<Atlas>) => {
             h.span(
               [h.Class('lab-count')],
               [
-                `${cards.length} groups · ${atlas.reach(model.depth).states.length} states · ${atlas.reach(model.depth).isComplete ? 'complete' : 'incomplete'}`,
+                `${cards.length} groups · ${atlas.reach(model.depth, model.search).states.length} states · ${atlas.reach(model.depth, model.search).isComplete ? 'complete' : 'incomplete'}`,
               ],
             ),
+            searchView(model, h),
             depthView(model, atlas, h),
             h.button(
               [h.Class('lab-quiet'), h.OnClick(Message.ClickedReset())],
@@ -568,7 +657,8 @@ export const makeLab = (atlases: Array.NonEmptyReadonlyArray<Atlas>) => {
               gridView(model, atlas, cards, maybeSelected, h),
               Option.match(maybeSelected, {
                 onNone: () => h.empty,
-                onSome: card => inspectorView(atlas, card, model.depth, h),
+                onSome: card =>
+                  inspectorView(atlas, card, model.depth, model.search, h),
               }),
             ],
           ),

@@ -55,7 +55,7 @@ bunx oxfmt src          # format
 
 ### How the atlas works
 
-- **Exploration.** Exploration is breadth-first in layers, memoized (`layerAt`). Successors are declared moves or public Scene-derived interactions plus Command answers. Programs choose oldest-only (default) or any-pending scheduling; Signup uses any-pending. See README for supported view-driven controls and scope limits.
+- **Exploration.** Exploration is breadth-first in layers, memoized (`layerAt`). Successors are declared moves or public Scene-derived interactions plus Command answers. Programs choose oldest-only (default) or any-pending scheduling; Signup uses any-pending. The lab's Search control (`reach(depth, search)`) also offers depth-first, which revisits a state found on a shorter path so it reaches the breadth-first set at the same depth unless the budget runs out, and 32 seeded random walks of up to `depth` steps. A trace is the path on which a state was first found, so it can be longer than the shortest after a depth-first or random search; `check` stays breadth-first. See README for supported view-driven controls and scope limits.
 - **Merging.** A state is keyed by `identity.of([setup.moves, setup.inputs, setup.responders, model, pending names and args])`. Setups that share behaviour references merge. So declare `moves` and `responders` at module scope unless they must close over a setup choice.
 - **Live clicks.** A click inside a card sends the Message through `atlas.send`, which validates it with `Schema.is(program.Message)` and records an `Event` hop.
 - **Budget.** `budget` (5,000) caps exploration. `reach().isComplete` is false when the budget is hit.
@@ -72,7 +72,7 @@ bunx oxfmt src          # format
 - **Lazy views.** `createKeyedLazy` slots and the view functions passed to them live at module scope, and the arguments must be primitives or stable references. Otherwise the memo never hits; `caseView` takes `slot`, `home` and `state` for this reason.
 - **`Got*` naming.** `Got*` Messages are reserved for typed Submodels. A case's Message is untyped, so the lab uses `InteractedWithCase`.
 - **Styling.** The lab chrome must never restyle a program's view. All lab CSS sits in `@layer components`, below Tailwind utilities. The one deliberate exception is the unlayered `.case-preview > * { min-height: 0 }`, so page-sized views take their natural height in cards.
-- **Design direction (from the user).** One clean top bar: program picker, filters, count, depth, Reset. No brand, no devtools overlay. Cards show the state id and the step that produced it, with the full path on hover. Answer buttons show inline only when a Command has 4 or fewer answers. The full trace lives in the inspector. Prefer removing UI over adding it.
+- **Design direction (from the user).** One clean top bar: program picker, filters, count, search (BFS/DFS/Random), depth, Reset. No brand, no devtools overlay. Preview frames show only application views, with a neutral Inspect button outside each frame. State ids, execution counts, traces, and Command answers live in the inspector; aggregate counts stay in the top bar. Prefer removing UI over adding it.
 
 ### Known issues
 

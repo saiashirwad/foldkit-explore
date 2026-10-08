@@ -49,6 +49,11 @@ export type Property<Model, Message> = Readonly<{
 
 export type Schedule = 'oldest' | 'any'
 
+// NOTE: Every search stops at the same depth (trace length) and budget; they
+// differ in which states they reach first and, past the budget, at all.
+export const Search = Schema.Literals(['breadth', 'depth', 'random'])
+export type Search = typeof Search.Type
+
 export type Program<Model, Message> = Readonly<{
   name: string
   schedule?: Schedule
@@ -115,7 +120,7 @@ export type Atlas = Readonly<{
   check: (depth: number) => ReadonlyArray<Violation>
   groups: (states: ReadonlyArray<string>) => ReadonlyArray<Group>
   grouping: string
-  reach: (depth: number) => Reach
+  reach: (depth: number, search?: Search) => Reach
   successors: (state: string) => ReadonlyArray<Step>
   send: (state: string, message: unknown) => Option.Option<string>
   trace: (state: string) => ReadonlyArray<Step>
@@ -161,6 +166,19 @@ const tagOf = (message: unknown): string =>
   Predicate.hasProperty(message, '_tag') && Predicate.isString(message._tag)
     ? message._tag
     : 'Message'
+
+const WALKS = 32
+
+// NOTE: mulberry32, a small seeded generator, so random walks repeat exactly.
+const random = (seed: number) => {
+  let state = seed
+  return (): number => {
+    state = (state + 0x6d2b79f5) | 0
+    let mixed = Math.imul(state ^ (state >>> 15), 1 | state)
+    mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4_294_967_296
+  }
+}
 
 // NOTE: An atlas memoizes its Program's state graph as it is explored, so its
 // caches only grow. Ids like S4 follow discovery order within one session;
@@ -414,11 +432,82 @@ export const make = <Model, Message>(
     return layer
   }
 
-  const reach = (depth: number): Reach => ({
+  const breadthFirst = (depth: number): Reach => ({
     states: Array.flatMap(Array.range(0, depth), layerAt),
     isComplete:
       Array.isReadonlyArrayEmpty(layerAt(depth + 1)) && placed.size < budget,
   })
+
+  // NOTE: A state found again on a shorter path is revisited, so depth-first
+  // reaches the same states as breadth-first at the same depth unless the
+  // budget runs out first.
+  const depthFirst = (depth: number): ReadonlyArray<string> => {
+    const shallowest = new Map<string, number>()
+    const order: Array<string> = []
+    const visit = (id: string, distance: number): void => {
+      const known = shallowest.get(id)
+      if (known !== undefined && known <= distance) {
+        return
+      }
+      if (known === undefined) {
+        if (order.length >= budget) {
+          return
+        }
+        order.push(id)
+      }
+      shallowest.set(id, distance)
+      if (distance < depth) {
+        Array.forEach(successors(id), step => visit(step.to, distance + 1))
+      }
+    }
+    Array.forEach(layerAt(0), id => visit(id, 0))
+    return order
+  }
+
+  // NOTE: Each walk has its own seed, so a deeper search extends the same
+  // walks instead of drawing new ones.
+  const randomWalks = (depth: number): ReadonlyArray<string> =>
+    Array.dedupe(
+      Array.flatMap(Array.range(1, WALKS), seed => {
+        const next = random(seed)
+        const pick = <A>(items: ReadonlyArray<A>): Option.Option<A> =>
+          Array.get(items, Math.floor(next() * items.length))
+        const walk: Array<string> = []
+        let maybeAt = pick(layerAt(0))
+        while (Option.isSome(maybeAt) && walk.length <= depth) {
+          walk.push(maybeAt.value)
+          maybeAt = Option.map(pick(successors(maybeAt.value)), step => step.to)
+        }
+        return walk
+      }),
+    )
+
+  const reaches = new Map<string, Reach>()
+  const reach = (depth: number, search: Search = 'breadth'): Reach => {
+    if (search === 'breadth') {
+      return breadthFirst(depth)
+    }
+    const cacheKey = `${search} ${depth}`
+    const known = reaches.get(cacheKey)
+    if (known !== undefined) {
+      return known
+    }
+    const states = Array.take(
+      search === 'depth' ? depthFirst(depth) : randomWalks(depth),
+      budget,
+    )
+    const reached = new Set(states)
+    const result = {
+      states,
+      isComplete:
+        reached.size < budget &&
+        Array.every(states, id =>
+          Array.every(successors(id), step => reached.has(step.to)),
+        ),
+    }
+    reaches.set(cacheKey, result)
+    return result
+  }
 
   const send = (id: string, message: unknown): Option.Option<string> => {
     if (!isMessage(message)) {
