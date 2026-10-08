@@ -1,0 +1,53 @@
+# Weather · depth 8 · 12 states · complete
+
+S1  empty
+    {"zipCodeInput":"","weather":{"_tag":"Idle"}}
+    typed → S2 · cleared → S1 · submitted → S3
+
+S2  valid
+    {"zipCodeInput":"90210","weather":{"_tag":"Idle"}}
+    typed → S2 · cleared → S1 · submitted → S4
+
+S3  empty › submitted
+    {"zipCodeInput":"","weather":{"_tag":"Loading"}}
+    pending FetchWeather {"zipCode":""}
+    typed → S5 · cleared → S3 · FetchWeather → S6
+
+S4  valid › submitted
+    {"zipCodeInput":"90210","weather":{"_tag":"Loading"}}
+    pending FetchWeather {"zipCode":"90210"}
+    typed → S4 · cleared → S7 · FetchWeather succeeded → S8 · FetchWeather failed → S9
+
+S5  empty › submitted › typed
+    {"zipCodeInput":"90210","weather":{"_tag":"Loading"}}
+    pending FetchWeather {"zipCode":""}
+    typed → S5 · cleared → S3 · FetchWeather → S10
+
+S6  empty › submitted › FetchWeather
+    {"zipCodeInput":"","weather":{"_tag":"Failure","error":"Zip code required"}}
+    typed → S10 · cleared → S6 · submitted → S3
+
+S7  valid › submitted › cleared
+    {"zipCodeInput":"","weather":{"_tag":"Loading"}}
+    pending FetchWeather {"zipCode":"90210"}
+    typed → S4 · cleared → S7 · FetchWeather succeeded → S11 · FetchWeather failed → S12
+
+S8  valid › submitted › FetchWeather succeeded
+    {"zipCodeInput":"90210","weather":{"_tag":"Success","data":{"zipCode":"90210","temperature":72,"description":"Clear sky","humidity":45,"windSpeed":10,"locationName":"Beverly Hills","region":"California"}}}
+    typed → S8 · cleared → S11 · submitted → S4
+
+S9  valid › submitted › FetchWeather failed
+    {"zipCodeInput":"90210","weather":{"_tag":"Failure","error":"Location not found"}}
+    typed → S9 · cleared → S12 · submitted → S4
+
+S10  empty › submitted › typed › FetchWeather
+    {"zipCodeInput":"90210","weather":{"_tag":"Failure","error":"Zip code required"}}
+    typed → S10 · cleared → S6 · submitted → S4
+
+S11  valid › submitted › cleared › FetchWeather succeeded
+    {"zipCodeInput":"","weather":{"_tag":"Success","data":{"zipCode":"90210","temperature":72,"description":"Clear sky","humidity":45,"windSpeed":10,"locationName":"Beverly Hills","region":"California"}}}
+    typed → S8 · cleared → S11 · submitted → S3
+
+S12  valid › submitted › cleared › FetchWeather failed
+    {"zipCodeInput":"","weather":{"_tag":"Failure","error":"Location not found"}}
+    typed → S9 · cleared → S12 · submitted → S3

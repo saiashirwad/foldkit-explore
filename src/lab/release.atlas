@@ -1,0 +1,104 @@
+# Release · depth 12 · 25 states · complete
+
+S1  start
+    {"release":{"_tag":"Loading"},"submission":{"_tag":"Reviewing"}}
+    pending FetchRelease {}
+    FetchRelease ready staging passed deployer → S2 · FetchRelease ready staging passed viewer → S3 · FetchRelease ready staging running → S4 · FetchRelease ready staging failed → S5 · FetchRelease ready production passed deployer approved → S6 · FetchRelease ready production passed deployer pending → S7 · FetchRelease ready production passed deployer rejected → S8 · FetchRelease ready production passed viewer → S9 · FetchRelease ready production running → S10 · FetchRelease ready production failed → S11 · FetchRelease unavailable → S12
+
+S2  start › FetchRelease ready staging passed deployer
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Staging"},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Reviewing"}}
+    reviewed → S13
+
+S3  start › FetchRelease ready staging passed viewer
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Staging"},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Viewer"}},"submission":{"_tag":"Reviewing"}}
+    
+
+S4  start › FetchRelease ready staging running
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Staging"},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Running","detail":"Running payment-provider tests"}],"access":"Deployer"}},"submission":{"_tag":"Reviewing"}}
+    
+
+S5  start › FetchRelease ready staging failed
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Staging"},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Failed","detail":"Refund idempotency test failed"}],"access":"Deployer"}},"submission":{"_tag":"Reviewing"}}
+    
+
+S6  start › FetchRelease ready production passed deployer approved
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Production","approval":{"_tag":"Approved","approvedBy":"Maya Chen"}},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Reviewing"}}
+    reviewed → S14
+
+S7  start › FetchRelease ready production passed deployer pending
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Production","approval":{"_tag":"Pending"}},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Reviewing"}}
+    
+
+S8  start › FetchRelease ready production passed deployer rejected
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Production","approval":{"_tag":"Rejected"}},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Reviewing"}}
+    
+
+S9  start › FetchRelease ready production passed viewer
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Production","approval":{"_tag":"Pending"}},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Viewer"}},"submission":{"_tag":"Reviewing"}}
+    
+
+S10  start › FetchRelease ready production running
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Production","approval":{"_tag":"Pending"}},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Running","detail":"Running payment-provider tests"}],"access":"Deployer"}},"submission":{"_tag":"Reviewing"}}
+    
+
+S11  start › FetchRelease ready production failed
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Production","approval":{"_tag":"Pending"}},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Failed","detail":"Refund idempotency test failed"}],"access":"Deployer"}},"submission":{"_tag":"Reviewing"}}
+    
+
+S12  start › FetchRelease unavailable
+    {"release":{"_tag":"Failure","error":"Release service unavailable. No deployment can be started."},"submission":{"_tag":"Reviewing"}}
+    
+
+S13  start › FetchRelease ready staging passed deployer › reviewed
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Staging"},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Confirming","confirmation":""}}
+    cancelled → S2 · submitted → S15
+
+S14  start › FetchRelease ready production passed deployer approved › reviewed
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Production","approval":{"_tag":"Approved","approvedBy":"Maya Chen"}},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Confirming","confirmation":""}}
+    confirmed → S16 · cancelled → S6 · submitted → S14
+
+S15  start › FetchRelease ready staging passed deployer › reviewed › submitted
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Staging"},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Submitting"}}
+    pending DeployRelease {"commit":"c73a9f2","environment":"staging","expectedRevision":42}
+    submittedAgain → S15 · DeployRelease accepted → S17 · DeployRelease conflict → S18 · DeployRelease unavailable → S19 · DeployRelease disconnected → S20
+
+S16  start › FetchRelease ready production passed deployer approved › reviewed › confirmed
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Production","approval":{"_tag":"Approved","approvedBy":"Maya Chen"}},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Confirming","confirmation":"production"}}
+    confirmed → S16 · cancelled → S6 · submitted → S21
+
+S17  start › FetchRelease ready staging passed deployer › reviewed › submitted › DeployRelease accepted
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Staging"},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Queued","deploymentId":"dep_2048"}}
+    
+
+S18  start › FetchRelease ready staging passed deployer › reviewed › submitted › DeployRelease conflict
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Staging"},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Conflicted"}}
+    
+
+S19  start › FetchRelease ready staging passed deployer › reviewed › submitted › DeployRelease unavailable
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Staging"},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Failed"}}
+    retried → S13
+
+S20  start › FetchRelease ready staging passed deployer › reviewed › submitted › DeployRelease disconnected
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Staging"},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Lost"}}
+    
+
+S21  start › FetchRelease ready production passed deployer approved › reviewed › confirmed › submitted
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Production","approval":{"_tag":"Approved","approvedBy":"Maya Chen"}},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Submitting"}}
+    pending DeployRelease {"commit":"c73a9f2","environment":"production","expectedRevision":42}
+    submittedAgain → S21 · DeployRelease accepted → S22 · DeployRelease conflict → S23 · DeployRelease unavailable → S24 · DeployRelease disconnected → S25
+
+S22  start › FetchRelease ready production passed deployer approved › reviewed › confirmed › submitted › DeployRelease accepted
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Production","approval":{"_tag":"Approved","approvedBy":"Maya Chen"}},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Queued","deploymentId":"dep_2048"}}
+    
+
+S23  start › FetchRelease ready production passed deployer approved › reviewed › confirmed › submitted › DeployRelease conflict
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Production","approval":{"_tag":"Approved","approvedBy":"Maya Chen"}},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Conflicted"}}
+    
+
+S24  start › FetchRelease ready production passed deployer approved › reviewed › confirmed › submitted › DeployRelease unavailable
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Production","approval":{"_tag":"Approved","approvedBy":"Maya Chen"}},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Failed"}}
+    retried → S14
+
+S25  start › FetchRelease ready production passed deployer approved › reviewed › confirmed › submitted › DeployRelease disconnected
+    {"release":{"_tag":"Success","data":{"service":"billing-api","title":"Prevent duplicate invoice charges","commit":"c73a9f2","revision":42,"target":{"_tag":"Production","approval":{"_tag":"Approved","approvedBy":"Maya Chen"}},"checks":[{"name":"Build","status":"Passed","detail":"Artifact uploaded"},{"name":"Typecheck","status":"Passed","detail":"No type errors"},{"name":"Integration tests","status":"Passed","detail":"142 tests passed"}],"access":"Deployer"}},"submission":{"_tag":"Lost"}}
+    

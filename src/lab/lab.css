@@ -1,0 +1,409 @@
+:root {
+  color-scheme: light;
+  --ink: #1d1f29;
+  --muted: #8a8d9b;
+  --faint: #b4b6c2;
+  --line: #e8e8ee;
+  --soft: #f3f3f7;
+  --page: #f7f7f9;
+  --accent: #6d4fe0;
+  --accent-soft: #f0ecfd;
+  --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%238a8d9b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 4.75 6 7.25l2.5-2.5'/%3E%3C/svg%3E");
+}
+
+/* NOTE: The lab sits below Tailwind's utilities so it never restyles a
+   program's own view. */
+@layer components {
+  .lab {
+    min-height: 100vh;
+    background: var(--page);
+    color: var(--ink);
+    font:
+      13px/1.5 -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      sans-serif;
+  }
+
+  .lab button,
+  .lab select {
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .lab button:disabled {
+    cursor: default;
+    opacity: 0.35;
+  }
+
+  .lab :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .lab select {
+    appearance: none;
+    border: 0;
+    background: var(--chevron) no-repeat right center / 12px;
+    padding-right: 18px;
+  }
+
+  .lab-quiet {
+    padding: 4px 7px;
+    border-radius: 6px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .lab-quiet:hover {
+    background: var(--soft);
+    color: var(--ink);
+  }
+
+  /* BAR */
+
+  .lab-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    min-height: 56px;
+    padding: 10px 24px;
+    background: #ffffffee;
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .lab .lab-program {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.2px;
+  }
+
+  .lab-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .lab-filter {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 8px 0 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    font: 11px var(--mono);
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+
+  .lab-filter:hover {
+    border-color: #d6d6e0;
+  }
+
+  .lab-filter select {
+    color: var(--ink);
+    font: 11px var(--mono);
+  }
+
+  .lab-filter.is-active {
+    border-color: #cdbff5;
+    background: var(--accent-soft);
+  }
+
+  .lab-filter.is-active select {
+    color: var(--accent);
+  }
+
+  .lab-header-end {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-left: auto;
+  }
+
+  .lab-count {
+    font: 11px var(--mono);
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .lab-depth {
+    display: flex;
+    align-items: center;
+    font: 11px var(--mono);
+    color: var(--muted);
+  }
+
+  .lab-depth > span {
+    margin-right: 8px;
+  }
+
+  .lab-depth button {
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--line);
+    background: #fff;
+    font-size: 13px;
+    line-height: 1;
+  }
+
+  .lab-depth button:first-of-type {
+    border-radius: 7px 0 0 7px;
+  }
+
+  .lab-depth button:last-of-type {
+    border-radius: 0 7px 7px 0;
+  }
+
+  .lab-depth output {
+    min-width: 30px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    border-block: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+  }
+
+  /* WORKSPACE */
+
+  .lab-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 20px;
+    align-items: start;
+    padding: 20px 24px 48px;
+  }
+
+  .lab-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 272px), 1fr));
+    gap: 12px;
+    align-items: start;
+  }
+
+  .lab-empty {
+    padding: 40px 0;
+    color: var(--muted);
+  }
+
+  .lab .lab-more {
+    grid-column: 1 / -1;
+    padding: 10px;
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+    color: var(--muted);
+    font: 11px var(--mono);
+  }
+
+  /* CASE */
+
+  .case {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    cursor: pointer;
+    transition:
+      border-color 0.15s,
+      box-shadow 0.15s;
+  }
+
+  .case:hover {
+    border-color: #d6d6e0;
+  }
+
+  .case.is-selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px #6d4fe014;
+  }
+
+  .case-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px 0;
+    font: 10px var(--mono);
+    color: var(--muted);
+  }
+
+  .case-step {
+    overflow: hidden;
+    color: var(--accent);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .case-origin {
+    color: var(--faint);
+  }
+
+  .case-preview {
+    flex: 1;
+    padding: 2px 4px 8px;
+    zoom: 0.82;
+  }
+
+  .case-answers {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--soft);
+  }
+
+  .case-answers-label {
+    margin-right: 2px;
+    font: 10px var(--mono);
+    color: var(--muted);
+  }
+
+  .case-answers-count {
+    font: 10px var(--mono);
+    color: var(--faint);
+  }
+
+  .lab .case-answers button {
+    padding: 2px 8px;
+    border: 1px solid #e2dbf9;
+    border-radius: 6px;
+    background: #fff;
+    color: var(--accent);
+    font: 10px var(--mono);
+  }
+
+  .lab .case-answers button:hover {
+    background: var(--accent-soft);
+  }
+
+  /* INSPECTOR */
+
+  .inspector {
+    position: sticky;
+    top: 76px;
+    max-height: calc(100vh - 96px);
+    overflow: auto;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+
+  .inspector-head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 12px 12px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .inspector-head strong {
+    margin-right: auto;
+    font: 600 12px var(--mono);
+  }
+
+  .inspector-section {
+    padding: 12px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .inspector-section h4 {
+    padding: 0 6px 6px;
+    font: 10px var(--mono);
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+
+  .inspector-command {
+    display: block;
+    padding: 2px 6px;
+    font: 10.5px var(--mono);
+    overflow-wrap: anywhere;
+  }
+
+  .lab .row {
+    width: 100%;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 5px 6px;
+    border-radius: 6px;
+    text-align: left;
+    font-size: 12px;
+  }
+
+  .lab .row:hover {
+    background: var(--soft);
+  }
+
+  .lab .row.is-current {
+    background: var(--accent-soft);
+  }
+
+  .row-label {
+    flex: 1;
+    overflow-wrap: anywhere;
+  }
+
+  .row-state {
+    font: 10px var(--mono);
+    color: var(--faint);
+  }
+
+  .inspector summary {
+    padding: 12px 16px;
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  .inspector pre {
+    margin: 0;
+    padding: 14px 16px;
+    max-height: 320px;
+    overflow: auto;
+    background: #1f2230;
+    color: #c9ccd8;
+    font: 10.5px/1.7 var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 900px) {
+    .lab-workspace {
+      grid-template-columns: 1fr;
+    }
+
+    .inspector {
+      position: static;
+      max-height: none;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .lab-header,
+    .lab-workspace {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+  }
+}
+
+/* NOTE: Page-sized views fill the viewport with min-height. Inside a card they
+   take their natural height instead, the one rule that overrides a program. */
+.case-preview > * {
+  min-height: 0;
+}
