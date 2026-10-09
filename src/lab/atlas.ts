@@ -501,6 +501,7 @@ export const make = <Model, Message>(
       states,
       isComplete:
         reached.size < budget &&
+        Array.every(layerAt(0), id => reached.has(id)) &&
         Array.every(states, id =>
           Array.every(successors(id), step => reached.has(step.to)),
         ),

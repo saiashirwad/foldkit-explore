@@ -335,7 +335,14 @@ const summaryView = (model: Model, h: HtmlBuilder<Message>): Html =>
     ],
     [
       h.dt([h.Class('text-slate-500')], ['Username']),
-      h.dd([h.Class('font-mono text-slate-900')], [model.username]),
+      h.dd(
+        [
+          h.Class(
+            '[min-inline-size:0] font-mono wrap-break-word text-slate-900',
+          ),
+        ],
+        [model.username],
+      ),
       h.dt([h.Class('text-slate-500')], ['Plan']),
       h.dd([h.Class('text-slate-900')], [model.plan]),
     ],

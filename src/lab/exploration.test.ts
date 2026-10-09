@@ -2,19 +2,23 @@ import { Array, Option, Schema } from 'effect'
 import { expect, test } from 'vitest'
 
 import * as Signup from '../signup/main'
-import { SignupCases } from '../signup/main.cases'
+import {
+  SignupCases,
+  SignupLongContentCases,
+  longUsername,
+} from '../signup/main.cases'
 import { properties } from '../signup/properties'
 import { type Atlas, type Schedule, make } from './atlas'
 import { fixture } from './fixture'
 
-const signup = (schedule: Schedule = 'any') =>
+const signup = (schedule: Schedule = 'any', cases = SignupCases) =>
   make({
     name: 'Signup',
     Model: Signup.Model,
     Message: Signup.Message,
     update: Signup.update,
     view: Signup.view,
-    cases: SignupCases,
+    cases,
     schedule,
     properties,
   })
@@ -164,6 +168,54 @@ test('depth-first reaches the breadth-first states at the same depth, in its own
   expect(new Set(depth.states)).toEqual(new Set(breadth.states))
   expect(depth.states).not.toEqual(breadth.states)
   expect(depth.isComplete).toBe(breadth.isComplete)
+})
+
+test('long-content Confirm is discovered and its address replays in a fresh atlas', () => {
+  const atlas = signup('any', SignupLongContentCases)
+  const confirm = Option.getOrThrow(
+    Array.findFirst(atlas.reach(4).states, state => {
+      const model = Schema.decodeUnknownSync(Signup.Model)(atlas.encode(state))
+      return model.step._tag === 'Confirm' && model.username === longUsername
+    }),
+  )
+  expect(atlas.trace(confirm).map(step => step.kind)).toEqual([
+    'Start',
+    'Move',
+    'Answer',
+    'Move',
+    'Move',
+  ])
+  const fresh = signup('any', SignupLongContentCases)
+  const resolved = Option.getOrThrow(fresh.resolve(atlas.address(confirm)))
+  expect(fresh.encode(resolved)).toEqual(atlas.encode(confirm))
+  expect(fresh.pending(resolved)).toEqual(atlas.pending(confirm))
+})
+
+const terminalStarts = (count: number) =>
+  make({
+    name: 'Terminal starts',
+    Model: Schema.Number,
+    Message: Schema.Number,
+    update: (model, _message) => ({ model }),
+    view: (_model, h) => h.div([]),
+    *cases() {
+      const model = yield* fixture(
+        'start',
+        Object.fromEntries(
+          Array.makeBy(count, index => [String(index), index]),
+        ),
+      )
+      return { model }
+    },
+  })
+
+test('random completeness requires every starting state, not only closed sampled paths', () => {
+  const atlas = terminalStarts(40)
+  expect(atlas.reach(0).states).toHaveLength(40)
+  expect(atlas.reach(0).isComplete).toBe(true)
+  expect(atlas.reach(0, 'random').states.length).toBeLessThanOrEqual(32)
+  expect(atlas.reach(0, 'random').isComplete).toBe(false)
+  expect(terminalStarts(1).reach(0, 'random').isComplete).toBe(true)
 })
 
 test('random walks repeat exactly, and deeper walks extend shallower ones', () => {

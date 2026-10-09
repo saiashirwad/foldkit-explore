@@ -646,7 +646,7 @@ const inspectorView = (
         : inspectorDetails(
             'Properties',
             failures.length === 0
-              ? `${atlas.propertyNames.length} hold`
+              ? 'No violations found'
               : `${failures.length} failing`,
             [
               h.ul(
@@ -681,7 +681,7 @@ const inspectorView = (
               h.p(
                 [],
                 [
-                  'Checked over reached states and transitions within the selected depth, not all possible executions.',
+                  `Breadth-first checks through depth ${depth}, independently of the gallery search. Checked only reached states and transitions, not all possible executions.`,
                 ],
               ),
             ],

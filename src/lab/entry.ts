@@ -1,9 +1,9 @@
 import { Runtime } from 'foldkit'
 
-import { release, signup, weather } from '../programs'
+import { release, signup, signupLongContent, weather } from '../programs'
 import { makeLab } from './lab'
 
-const lab = makeLab([signup, release, weather])
+const lab = makeLab([signup, signupLongContent, release, weather])
 
 Runtime.run(
   Runtime.makeApplication({

@@ -4,7 +4,7 @@ import { WeatherCases } from './main.cases'
 import * as Release from './release/main'
 import { ReleaseCases } from './release/main.cases'
 import * as Signup from './signup/main'
-import { SignupCases } from './signup/main.cases'
+import { SignupCases, SignupLongContentCases } from './signup/main.cases'
 import { properties } from './signup/properties'
 
 export const weather = Atlas.make({
@@ -23,6 +23,17 @@ export const release = Atlas.make({
   update: Release.update,
   view: Release.view,
   cases: ReleaseCases,
+})
+
+export const signupLongContent = Atlas.make({
+  name: 'Signup · long content',
+  schedule: 'any',
+  properties,
+  Model: Signup.Model,
+  Message: Signup.Message,
+  update: Signup.update,
+  view: Signup.view,
+  cases: SignupLongContentCases,
 })
 
 export const signup = Atlas.make({

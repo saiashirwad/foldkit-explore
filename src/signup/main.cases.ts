@@ -1,3 +1,5 @@
+import { modifyFields } from 'foldkit/struct'
+
 import { type Setup, respond } from '../lab/atlas'
 import { type Choices, fixture } from '../lab/fixture'
 import { CheckUsername, CreateAccount, Message, type Model, init } from './main'
@@ -17,6 +19,16 @@ const responders = [
     })
   }),
 ]
+
+export const longUsername =
+  'averylongunbrokenusernameforcheckinghowaccountdetailswraponnarrowdisplays'
+
+export function* SignupLongContentCases(): Choices<Setup<Model, Message>> {
+  const setup = yield* SignupCases()
+  return modifyFields(setup, {
+    inputs: () => [{ label: 'Username', values: [longUsername] }],
+  })
+}
 
 export function* SignupCases(): Choices<Setup<Model, Message>> {
   const plan = yield* fixture('arrivedFrom', { home: 'Free', pricing: 'Pro' })

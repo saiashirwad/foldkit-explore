@@ -372,3 +372,34 @@ test('the search control orders the gallery and survives a program switch', () =
   expect(model.search).toBe('random')
   expect(lab.update(model, Message.ClickedReset()).model.search).toBe('breadth')
 })
+
+test('property evidence names BFS and depth even with a random gallery', () => {
+  const atlas = make({
+    name: 'Signup',
+    Model: Signup.Model,
+    Message: Signup.Message,
+    update: Signup.update,
+    view: Signup.view,
+    cases: SignupCases,
+    schedule: 'any',
+    properties,
+  })
+  const lab = makeLab([atlas])
+  Scene.scene(
+    lab,
+    Scene.given(lab.init().model),
+    Scene.click(Scene.role('button', { name: 'Random' })),
+    Scene.tap(simulation => {
+      const inspector = Option.getOrThrow(
+        Scene.find(simulation.html, 'aside.inspector'),
+      )
+      expect(Scene.textContent(inspector)).toContain('No violations found')
+      expect(Scene.textContent(inspector)).toContain(
+        'Breadth-first checks through depth 1, independently of the gallery search.',
+      )
+      expect(Scene.textContent(inspector)).toContain(
+        'not all possible executions',
+      )
+    }),
+  )
+})
