@@ -8,10 +8,10 @@ import {
   longUsername,
 } from '../signup/main.cases'
 import { properties } from '../signup/properties'
-import { type Atlas, type Schedule, make } from './atlas'
+import { type Atlas, make, send as move } from './atlas'
 import { fixture } from './fixture'
 
-const signup = (schedule: Schedule = 'any', cases = SignupCases) =>
+const signup = (cases = SignupCases) =>
   make({
     name: 'Signup',
     Model: Signup.Model,
@@ -19,7 +19,6 @@ const signup = (schedule: Schedule = 'any', cases = SignupCases) =>
     update: Signup.update,
     view: Signup.view,
     cases,
-    schedule,
     properties,
   })
 const start = (atlas: Atlas) =>
@@ -40,10 +39,10 @@ const checkingTwice = (atlas: Atlas) => {
   return send(atlas, ada, Signup.Message.UpdatedUsername({ value: 'grace' }))
 }
 
-test('any scheduler removes the chosen command and replays its address in a fresh atlas', () => {
+test('next chooses any pending command, removes the chosen command and replays its address in a fresh atlas', () => {
   const atlas = signup()
   const checking = checkingTwice(atlas)
-  const newestFirst = answer(atlas, checking, 'CheckUsername #2 free')
+  const newestFirst = answer(atlas, checking, 'CheckUsername #2 check 1 free')
   expect(atlas.pending(newestFirst)).toEqual([
     { name: 'CheckUsername', args: '{"username":"ada"}' },
   ])
@@ -51,28 +50,13 @@ test('any scheduler removes the chosen command and replays its address in a fres
     username: 'grace',
     availability: { _tag: 'Free' },
   })
-  const staleLast = answer(atlas, newestFirst, 'CheckUsername #1 taken')
+  const staleLast = answer(atlas, newestFirst, 'CheckUsername #1 check 0 taken')
   expect(atlas.encode(staleLast)).toEqual(atlas.encode(newestFirst))
   expect(atlas.pending(staleLast)).toEqual([])
   const fresh = signup()
   const resolved = Option.getOrThrow(fresh.resolve(atlas.address(newestFirst)))
   expect(fresh.encode(resolved)).toEqual(atlas.encode(newestFirst))
   expect(fresh.pending(resolved)).toEqual(atlas.pending(newestFirst))
-})
-
-test('oldest scheduling keeps the historical restriction and stale-first handling', () => {
-  const atlas = signup('oldest')
-  const checking = checkingTwice(atlas)
-  expect(
-    atlas.successors(checking).filter(step => step.kind === 'Answer'),
-  ).toHaveLength(2)
-  const staleFirst = answer(atlas, checking, 'CheckUsername taken')
-  expect(atlas.encode(staleFirst)).toEqual(atlas.encode(checking))
-  expect(atlas.pending(staleFirst)).toEqual([
-    { name: 'CheckUsername', args: '{"username":"grace"}' },
-  ])
-  const latest = answer(atlas, staleFirst, 'CheckUsername free')
-  expect(atlas.encode(latest)).toMatchObject({ availability: { _tag: 'Free' } })
 })
 
 test('screens group different pending queues without merging execution states', () => {
@@ -120,16 +104,18 @@ const counter = () =>
     *cases() {
       return {
         model: 0,
-        *moves(model: number) {
-          return yield* fixture(
-            'move',
-            model === 0
-              ? { long: 1, short: 3 }
-              : model === 1
-                ? { onwards: 2 }
-                : model === 2 || model === 3
-                  ? { finish: 4 }
-                  : {},
+        *next({ model }: { model: number }) {
+          return move(
+            yield* fixture(
+              'move',
+              model === 0
+                ? { long: 1, short: 3 }
+                : model === 1
+                  ? { onwards: 2 }
+                  : model === 2 || model === 3
+                    ? { finish: 4 }
+                    : {},
+            ),
           )
         },
       }
@@ -171,7 +157,7 @@ test('depth-first reaches the breadth-first states at the same depth, in its own
 })
 
 test('long-content Confirm is discovered and its address replays in a fresh atlas', () => {
-  const atlas = signup('any', SignupLongContentCases)
+  const atlas = signup(SignupLongContentCases)
   const confirm = Option.getOrThrow(
     Array.findFirst(atlas.reach(4).states, state => {
       const model = Schema.decodeUnknownSync(Signup.Model)(atlas.encode(state))
@@ -185,7 +171,7 @@ test('long-content Confirm is discovered and its address replays in a fresh atla
     'Move',
     'Move',
   ])
-  const fresh = signup('any', SignupLongContentCases)
+  const fresh = signup(SignupLongContentCases)
   const resolved = Option.getOrThrow(fresh.resolve(atlas.address(confirm)))
   expect(fresh.encode(resolved)).toEqual(atlas.encode(confirm))
   expect(fresh.pending(resolved)).toEqual(atlas.pending(confirm))

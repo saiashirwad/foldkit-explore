@@ -1,7 +1,14 @@
 import { Array, Option } from 'effect'
 import { AsyncData } from 'foldkit'
 
-import { type Setup, respond } from '../lab/atlas'
+import {
+  type NextState,
+  type Setup,
+  type Transition,
+  answer,
+  pendingRequests,
+  send,
+} from '../lab/atlas'
 import { type Choices, fixture } from '../lab/fixture'
 import {
   Approval,
@@ -80,15 +87,6 @@ function* releaseAnswer(): Choices<Message> {
   })
 }
 
-function* deployAnswer(): Choices<Message> {
-  return yield* fixture('deploy', {
-    accepted: Message.SucceededDeployRelease({ deploymentId: 'dep_2048' }),
-    conflict: Message.FailedDeployRelease({ reason: 'Conflict' }),
-    unavailable: Message.FailedDeployRelease({ reason: 'Unavailable' }),
-    disconnected: Message.FailedDeployRelease({ reason: 'Disconnected' }),
-  })
-}
-
 const movesFor = (
   release: Release,
   submission: Submission,
@@ -109,21 +107,47 @@ const movesFor = (
     Failed: () => ({ retried: Message.ClickedRetry() }),
   })
 
-function* moves(model: Model): Choices<Message> {
+const userActions = (model: Model): Readonly<Record<string, Message>> => {
   if (
     !AsyncData.isSuccess(model.release) ||
     Option.isSome(blockerOf(model.release.data))
   ) {
-    return yield* fixture('move', {})
+    return {}
   }
-  return yield* fixture('move', movesFor(model.release.data, model.submission))
+  return movesFor(model.release.data, model.submission)
 }
 
-const responders = [
-  respond(FetchRelease, releaseAnswer),
-  respond(DeployRelease, deployAnswer),
-]
+function* next(state: NextState<Model, Message>): Choices<Transition<Message>> {
+  const kind = yield* fixture('next', {
+    user: 'user',
+    fetch: 'fetch',
+    deploy: 'deploy',
+  })
+  if (kind === 'user') {
+    return send(yield* fixture('move', userActions(state.model)))
+  }
+  if (kind === 'fetch') {
+    const request = yield* fixture(
+      'pending',
+      pendingRequests(state, FetchRelease),
+    )
+    return answer(request, yield* releaseAnswer())
+  }
+  const request = yield* fixture(
+    'pending',
+    pendingRequests(state, DeployRelease),
+  )
+  return answer(
+    request,
+    yield* fixture('deploy', {
+      accepted: Message.SucceededDeployRelease({ deploymentId: 'dep_2048' }),
+      conflict: Message.FailedDeployRelease({ reason: 'Conflict' }),
+      unavailable: Message.FailedDeployRelease({ reason: 'Unavailable' }),
+      disconnected: Message.FailedDeployRelease({ reason: 'Disconnected' }),
+    }),
+  )
+}
 
 export function* ReleaseCases(): Choices<Setup<Model, Message>> {
-  return { ...init(), moves, responders }
+  return { ...init(), next }
 }

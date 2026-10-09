@@ -16,7 +16,6 @@ test('grouped gallery renders through Foldkit and interactions use selected exec
     update: Signup.update,
     view: Signup.view,
     cases: SignupCases,
-    schedule: 'any',
     properties,
   })
   const lab = makeLab([atlas])
@@ -31,7 +30,7 @@ test('grouped gallery renders through Foldkit and interactions use selected exec
       expect(Scene.textContent(simulation.html)).toContain('groups')
       expect(Scene.textContent(simulation.html)).toContain('incomplete')
       expect(Scene.textContent(simulation.html)).toContain(
-        'any pending Command',
+        'defined by next(state)',
       )
     }),
   )
@@ -72,7 +71,6 @@ test('filters pinned cards by their displayed state', () => {
     update: Signup.update,
     view: Signup.view,
     cases: SignupCases,
-    schedule: 'any',
   })
   const lab = makeLab([atlas])
   const home = Option.getOrThrow(
@@ -114,7 +112,6 @@ test('filters moved cards by their displayed response trace', () => {
     update: Signup.update,
     view: Signup.view,
     cases: SignupCases,
-    schedule: 'any',
   })
   const lab = makeLab([atlas])
   const home = Option.getOrThrow(
@@ -173,7 +170,6 @@ test('keeps a moved card and its stable slot when only its displayed response ma
     update: Signup.update,
     view: Signup.view,
     cases: SignupCases,
-    schedule: 'any',
   })
   const lab = makeLab([atlas])
   const home = Option.getOrThrow(Array.head(atlas.reach(0).states))
@@ -265,7 +261,6 @@ test('previews contain only the app and Inspect selects the slot for replies', (
     update: Signup.update,
     view: Signup.view,
     cases: SignupCases,
-    schedule: 'any',
   })
   const lab = makeLab([atlas])
   const group = Option.getOrThrow(
@@ -348,7 +343,6 @@ test('the search control orders the gallery and survives a program switch', () =
     update: Signup.update,
     view: Signup.view,
     cases: SignupCases,
-    schedule: 'any',
   })
   const lab = makeLab([atlas])
   Scene.scene(
@@ -381,7 +375,6 @@ test('property evidence names BFS and depth even with a random gallery', () => {
     update: Signup.update,
     view: Signup.view,
     cases: SignupCases,
-    schedule: 'any',
     properties,
   })
   const lab = makeLab([atlas])

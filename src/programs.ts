@@ -27,7 +27,6 @@ export const release = Atlas.make({
 
 export const signupLongContent = Atlas.make({
   name: 'Signup · long content',
-  schedule: 'any',
   properties,
   Model: Signup.Model,
   Message: Signup.Message,
@@ -38,7 +37,6 @@ export const signupLongContent = Atlas.make({
 
 export const signup = Atlas.make({
   name: 'Signup',
-  schedule: 'any',
   properties,
   Model: Signup.Model,
   Message: Signup.Message,

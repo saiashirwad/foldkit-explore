@@ -5,7 +5,7 @@ import { modifyFields } from 'foldkit/struct'
 import { expect, test } from 'vitest'
 
 import { release, signup, weather } from '../programs'
-import { type PendingCommand, describe, make } from './atlas'
+import { type PendingCommand, describe, make, send } from './atlas'
 import { fixture } from './fixture'
 
 const isDeploy = ({ name }: PendingCommand) => name === 'DeployRelease'
@@ -83,11 +83,13 @@ const checklist = make<Checklist, ChecklistMessage>({
         items: Array.makeBy(10_000, id => ({ id, done: false })),
         cursor: 0,
       },
-      *moves() {
-        return yield* fixture('move', {
-          toggled: ChecklistMessage.ToggledItem(),
-          moved: ChecklistMessage.MovedCursor(),
-        })
+      *next() {
+        return send(
+          yield* fixture('move', {
+            toggled: ChecklistMessage.ToggledItem(),
+            moved: ChecklistMessage.MovedCursor(),
+          }),
+        )
       },
     }
   },

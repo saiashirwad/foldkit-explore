@@ -1,41 +1,69 @@
-import { Array, Option, Predicate, Schema, String, pipe } from 'effect'
+import { Array, Option, Predicate, Schema, pipe } from 'effect'
 import type { Update } from 'foldkit'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 import { defineView } from 'foldkit/submodel'
 
 import { type Choices, Decision, outcomes } from './fixture'
 import { makeIdentity } from './identity'
-import { type InputDomain, inspect } from './interactions'
+import { type InputDomain, type Interaction, inspect } from './interactions'
 
 // PROGRAM
 
 export type Setup<Model, Message> = Readonly<{
   model: Model
   commands?: Update.Commands<Message>
-  moves?: (model: Model) => Choices<Message>
-  responders?: ReadonlyArray<Responder<Message>>
+  next?: (state: NextState<Model, Message>) => Choices<Transition<Message>>
   inputs?: ReadonlyArray<InputDomain>
 }>
-
-// NOTE: `answer` is a method so a Responder built from a Command's typed args
-// can join the list; the atlas only ever passes it that Command's own args.
-export type Responder<Message> = Readonly<{
-  command: string
-  answer(args: Readonly<Record<string, unknown>>): Choices<Message>
-}>
-
-export const respond = <
-  Args extends Readonly<Record<string, unknown>>,
-  Message,
->(
-  definition: Readonly<{ name: string }> & ((args: Args) => unknown),
-  answer: (args: Args) => Choices<Message>,
-): Responder<Message> => ({ command: definition.name, answer })
 
 export type State<Model, Message> = Readonly<{
   model: Model
   pending: Update.Commands<Message>
 }>
+
+export type NextState<Model, Message> = State<Model, Message> &
+  Readonly<{
+    interactions: Readonly<Record<string, Message>>
+  }>
+
+type RequestCommand = Readonly<{
+  name: string
+  args?: Readonly<Record<string, unknown>>
+}>
+
+export type Request<C extends RequestCommand = RequestCommand> = Readonly<{
+  index: number
+  command: C
+}>
+
+export type Transition<Message> =
+  | Readonly<{ kind: 'Move'; message: Message }>
+  | Readonly<{ kind: 'Answer'; request: Request; message: Message }>
+
+export const send = <Message>(message: Message): Transition<Message> => ({
+  kind: 'Move',
+  message,
+})
+
+export const answer = <Message>(
+  request: Request,
+  message: Message,
+): Transition<Message> => ({ kind: 'Answer', request, message })
+
+// NOTE: Foldkit identifies Commands by name. Definitions used in one program
+// must have unique names; matching a definition recovers its typed arguments.
+export const pendingRequests = <C extends RequestCommand>(
+  state: Readonly<{ pending: ReadonlyArray<RequestCommand> }>,
+  definition: Readonly<{ name: string }> & ((...args: never[]) => C),
+): Readonly<Record<string, Request<C>>> => {
+  const matches = (command: RequestCommand): command is C =>
+    command.name === definition.name
+  return Object.fromEntries(
+    Array.flatMap(state.pending, (command, index) =>
+      matches(command) ? [[`${index}`, { index, command }]] : [],
+    ),
+  )
+}
 
 export type Property<Model, Message> = Readonly<{
   name: string
@@ -47,8 +75,6 @@ export type Property<Model, Message> = Readonly<{
   ) => boolean
 }>
 
-export type Schedule = 'oldest' | 'any'
-
 // NOTE: Every search stops at the same depth (trace length) and budget; they
 // differ in which states they reach first and, past the budget, at all.
 export const Search = Schema.Literals(['breadth', 'depth', 'random'])
@@ -56,7 +82,6 @@ export type Search = typeof Search.Type
 
 export type Program<Model, Message> = Readonly<{
   name: string
-  schedule?: Schedule
   properties?: ReadonlyArray<Property<Model, Message>>
   Model: Schema.Codec<Model, unknown>
   Message: Schema.Codec<Message, unknown>
@@ -114,7 +139,6 @@ export type Group = Readonly<{ home: string; states: ReadonlyArray<string> }>
 
 export type Atlas = Readonly<{
   name: string
-  schedule: Schedule
   budget: number
   propertyNames: ReadonlyArray<string>
   check: (depth: number) => ReadonlyArray<Violation>
@@ -187,7 +211,6 @@ export const make = <Model, Message>(
   program: Program<Model, Message>,
   budget = 5_000,
 ): Atlas => {
-  const schedule = program.schedule ?? 'oldest'
   const identity = makeIdentity()
   const inspections = new Map<
     unknown,
@@ -233,18 +256,9 @@ export const make = <Model, Message>(
     })
 
   const arrive = (arrival: Arrival<Model, Message>): Step => {
-    if (
-      arrival.setup.moves !== undefined &&
-      arrival.setup.inputs !== undefined
-    ) {
-      throw new Error(
-        `${program.name}: choose view-driven inputs or declared moves, not both.`,
-      )
-    }
     const key = identity.of([
-      arrival.setup.moves,
+      arrival.setup.next,
       arrival.setup.inputs,
-      arrival.setup.responders ?? [],
       arrival.model,
       Array.map(arrival.pending, command => [command.name, command.args ?? {}]),
     ])
@@ -303,88 +317,69 @@ export const make = <Model, Message>(
     return step
   }
 
-  const moves = (node: Node<Model, Message>): ReadonlyArray<Step> =>
-    node.setup.inputs !== undefined
-      ? Array.map(inspection(node).interactions, ({ label, message }, index) =>
-          transition(node, message, node.pending, {
-            kind: 'Move',
-            decisions: [
-              { fixture: 'interaction', option: `${index}: ${label}` },
-            ],
-            maybeMessage: Option.none(),
-            label,
-          }),
-        )
-      : Option.match(Option.fromNullishOr(node.setup.moves), {
-          onNone: () => [],
-          onSome: choose =>
-            Array.map(
-              outcomes(() => choose(node.model)),
-              ({ decisions, value }) =>
-                transition(node, value, node.pending, {
-                  kind: 'Move',
-                  decisions,
-                  maybeMessage: Option.none(),
-                  label: labelOf(decisions),
-                }),
-            ),
-        })
-
-  const answers = (node: Node<Model, Message>): ReadonlyArray<Step> =>
-    Array.flatMap(
-      schedule === 'oldest' ? Array.take(node.pending, 1) : node.pending,
-      (command, index) =>
-        pipe(
-          Array.findFirst(
-            node.setup.responders ?? [],
-            responder => responder.command === command.name,
-          ),
-          Option.getOrThrowWith(
-            () =>
-              new Error(
-                `${program.name} needs respond(${command.name}, …) in its cases.`,
-              ),
-          ),
-          responder => outcomes(() => responder.answer(command.args ?? {})),
-          Array.map(({ decisions, value }) =>
-            transition(
-              node,
-              value,
-              Array.filter(
-                node.pending,
-                (_command, position) => position !== index,
-              ),
-              {
-                kind: 'Answer',
-                decisions:
-                  schedule === 'any'
-                    ? [{ fixture: 'pending', option: `${index}` }, ...decisions]
-                    : decisions,
-                maybeMessage: Option.none(),
-                label: Array.join(
-                  Array.filter(
-                    [
-                      command.name,
-                      schedule === 'any' ? `#${index + 1}` : '',
-                      labelOf(decisions),
-                    ],
-                    String.isNonEmpty,
-                  ),
-                  ' ',
-                ),
-              },
-            ),
-          ),
-        ),
-    )
-
   const successors = (id: string): ReadonlyArray<Step> => {
     const known = successorsOf.get(id)
     if (known !== undefined) {
       return known
     }
     const node = nodeOf(id)
-    const steps = [...moves(node), ...answers(node)]
+    const next = node.setup.next
+    const interactions =
+      node.setup.inputs === undefined
+        ? {}
+        : Object.fromEntries(
+            Array.map(
+              inspection(node).interactions,
+              ({ label, message }: Interaction<Message>, index) => [
+                `${index}: ${label}`,
+                message,
+              ],
+            ),
+          )
+    const steps =
+      next === undefined
+        ? []
+        : Array.map(
+            outcomes(() =>
+              next({ model: node.model, pending: node.pending, interactions }),
+            ),
+            ({ decisions, value }) => {
+              if (!isMessage(value.message)) {
+                throw new Error(
+                  `${program.name}: next returned an invalid Message.`,
+                )
+              }
+              if (value.kind === 'Move') {
+                return transition(node, value.message, node.pending, {
+                  kind: 'Move',
+                  decisions,
+                  maybeMessage: Option.none(),
+                  label: labelOf(decisions),
+                })
+              }
+              const { index, command } = value.request
+              if (node.pending[index] !== command) {
+                throw new Error(
+                  `${program.name}: answer must select a pending Command from this state.`,
+                )
+              }
+              return transition(
+                node,
+                value.message,
+                Array.filter(
+                  node.pending,
+                  (_command, position) => position !== index,
+                ),
+                {
+                  kind: 'Answer',
+                  decisions,
+                  maybeMessage: Option.none(),
+                  label:
+                    `${command.name} #${index + 1} ${labelOf(decisions)}`.trimEnd(),
+                },
+              )
+            },
+          )
     successorsOf.set(id, steps)
     return steps
   }
@@ -648,7 +643,6 @@ export const make = <Model, Message>(
 
   return {
     name: program.name,
-    schedule,
     budget,
     propertyNames: Array.map(
       program.properties ?? [],
@@ -714,7 +708,7 @@ export const describe = (atlas: Atlas, depth: number): string => {
   return Array.join(
     [
       `# ${atlas.name} · depth ${depth} · ${states.length} states · ${isComplete ? 'complete' : 'incomplete'}`,
-      `# Replies: ${atlas.schedule}; independent response fixtures; exploration threshold: ${atlas.budget} states`,
+      `# Transitions: next(state); exploration threshold: ${atlas.budget} states`,
       ...Array.flatMap(states, stateView),
       '',
     ],

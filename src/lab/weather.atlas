@@ -1,54 +1,54 @@
 # Weather · depth 8 · 12 states · complete
-# Replies: oldest; independent response fixtures; exploration threshold: 5000 states
+# Transitions: next(state); exploration threshold: 5000 states
 
 S1  empty
     {"zipCodeInput":"","weather":{"_tag":"Idle"}}
-    typed → S2 · cleared → S1 · submitted → S3
+    user typed → S2 · user cleared → S1 · user submitted → S3
 
 S2  valid
     {"zipCodeInput":"90210","weather":{"_tag":"Idle"}}
-    typed → S2 · cleared → S1 · submitted → S4
+    user typed → S2 · user cleared → S1 · user submitted → S4
 
-S3  empty › submitted
+S3  empty › user submitted
     {"zipCodeInput":"","weather":{"_tag":"Loading"}}
     pending FetchWeather {"zipCode":""}
-    typed → S5 · cleared → S3 · FetchWeather → S6
+    user typed → S5 · user cleared → S3 · FetchWeather #1 response 0 → S6
 
-S4  valid › submitted
+S4  valid › user submitted
     {"zipCodeInput":"90210","weather":{"_tag":"Loading"}}
     pending FetchWeather {"zipCode":"90210"}
-    typed → S4 · cleared → S7 · FetchWeather succeeded → S8 · FetchWeather failed → S9
+    user typed → S4 · user cleared → S7 · FetchWeather #1 response 0 succeeded → S8 · FetchWeather #1 response 0 failed → S9
 
-S5  empty › submitted › typed
+S5  empty › user submitted › user typed
     {"zipCodeInput":"90210","weather":{"_tag":"Loading"}}
     pending FetchWeather {"zipCode":""}
-    typed → S5 · cleared → S3 · FetchWeather → S10
+    user typed → S5 · user cleared → S3 · FetchWeather #1 response 0 → S10
 
-S6  empty › submitted › FetchWeather
+S6  empty › user submitted › FetchWeather #1 response 0
     {"zipCodeInput":"","weather":{"_tag":"Failure","error":"Zip code required"}}
-    typed → S10 · cleared → S6 · submitted → S3
+    user typed → S10 · user cleared → S6 · user submitted → S3
 
-S7  valid › submitted › cleared
+S7  valid › user submitted › user cleared
     {"zipCodeInput":"","weather":{"_tag":"Loading"}}
     pending FetchWeather {"zipCode":"90210"}
-    typed → S4 · cleared → S7 · FetchWeather succeeded → S11 · FetchWeather failed → S12
+    user typed → S4 · user cleared → S7 · FetchWeather #1 response 0 succeeded → S11 · FetchWeather #1 response 0 failed → S12
 
-S8  valid › submitted › FetchWeather succeeded
+S8  valid › user submitted › FetchWeather #1 response 0 succeeded
     {"zipCodeInput":"90210","weather":{"_tag":"Success","data":{"zipCode":"90210","temperature":72,"description":"Clear sky","humidity":45,"windSpeed":10,"locationName":"Beverly Hills","region":"California"}}}
-    typed → S8 · cleared → S11 · submitted → S4
+    user typed → S8 · user cleared → S11 · user submitted → S4
 
-S9  valid › submitted › FetchWeather failed
+S9  valid › user submitted › FetchWeather #1 response 0 failed
     {"zipCodeInput":"90210","weather":{"_tag":"Failure","error":"Location not found"}}
-    typed → S9 · cleared → S12 · submitted → S4
+    user typed → S9 · user cleared → S12 · user submitted → S4
 
-S10  empty › submitted › typed › FetchWeather
+S10  empty › user submitted › user typed › FetchWeather #1 response 0
     {"zipCodeInput":"90210","weather":{"_tag":"Failure","error":"Zip code required"}}
-    typed → S10 · cleared → S6 · submitted → S4
+    user typed → S10 · user cleared → S6 · user submitted → S4
 
-S11  valid › submitted › cleared › FetchWeather succeeded
+S11  valid › user submitted › user cleared › FetchWeather #1 response 0 succeeded
     {"zipCodeInput":"","weather":{"_tag":"Success","data":{"zipCode":"90210","temperature":72,"description":"Clear sky","humidity":45,"windSpeed":10,"locationName":"Beverly Hills","region":"California"}}}
-    typed → S8 · cleared → S11 · submitted → S3
+    user typed → S8 · user cleared → S11 · user submitted → S3
 
-S12  valid › submitted › cleared › FetchWeather failed
+S12  valid › user submitted › user cleared › FetchWeather #1 response 0 failed
     {"zipCodeInput":"","weather":{"_tag":"Failure","error":"Location not found"}}
-    typed → S9 · cleared → S12 · submitted → S3
+    user typed → S9 · user cleared → S12 · user submitted → S3

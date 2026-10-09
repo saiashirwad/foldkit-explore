@@ -249,9 +249,7 @@ const gridView = (
   )
 
 const optionsOf = (step: Step): Step['decisions'] =>
-  step.kind === 'Answer'
-    ? Array.filter(step.decisions, ({ fixture }) => fixture !== 'pending')
-    : []
+  step.kind === 'Answer' ? step.decisions : []
 
 // NOTE: An Answer's label is its Command, maybe a pending position, then its
 // options. The head is the label without the options.
@@ -694,7 +692,7 @@ const inspectorView = (
           h.p(
             [],
             [
-              `Replies: ${atlas.schedule === 'any' ? 'any pending Command' : 'oldest pending Command'}. Response fixtures choose independently on each answer.`,
+              'Transitions and pending Command selection are defined by next(state).',
             ],
           ),
           h.p(
@@ -719,7 +717,7 @@ const inspectorView = (
           h.p(
             [],
             [
-              'View-driven moves cover enabled buttons and configured text inputs only. Other programs use declared moves.',
+              'View-driven moves cover enabled buttons and configured text inputs only. Other programs choose Messages explicitly in next(state).',
             ],
           ),
         ],
