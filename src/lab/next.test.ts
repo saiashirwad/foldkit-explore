@@ -8,6 +8,7 @@ import {
   type NextState,
   type Transition,
   answer,
+  describe,
   make,
   pendingRequests,
   send,
@@ -23,6 +24,30 @@ const ReadValue = Command.define('ReadValue', {
 const Other = Command.define('Other', {
   messages: [Schema.Number],
   execute: Effect.die('Exploration must not execute Commands'),
+})
+
+const ReadBigint = Command.define('ReadBigint', {
+  args: { value: Schema.BigInt },
+  messages: [Schema.Number],
+  execute: () => Effect.die('Exploration must not execute Commands'),
+})
+
+test('pending Command arguments containing bigint remain inspectable', () => {
+  const atlas = make(
+    {
+      name: 'Bigint request',
+      Model: Schema.Number,
+      Message: Schema.Number,
+      start: () => ({ model: 0, commands: [ReadBigint({ value: 1n })] }),
+      update: model => ({ model }),
+      view: (_model, h) => h.div([]),
+    },
+    { *starts() {} },
+  )
+  expect(atlas.pending(start(atlas))).toEqual([
+    { name: 'ReadBigint', args: '{"value":"1n"}' },
+  ])
+  expect(describe(atlas, 0)).toContain('pending ReadBigint {"value":"1n"}')
 })
 
 type Next = (state: NextState<number, number>) => Choices<Transition<number>>
@@ -140,6 +165,32 @@ test('equal Models with distinct input context remain distinct execution states'
       atlas.successors(state).map(step => atlas.encode(step.to)),
     ),
   ).toEqual([[1], [2]])
+})
+
+test('signed-zero Models retain distinct execution observations and screen groups', () => {
+  const atlas = make(
+    {
+      name: 'Signed zero',
+      Model: Schema.Number,
+      Message: Schema.Number,
+      start: (input: number) => ({ model: input }),
+      update: (model, _message) => ({ model }),
+      view: (model, h) =>
+        h.p([], [Object.is(model, -0) ? 'negative' : 'positive']),
+    },
+    {
+      *starts() {
+        return yield* fixture('zero', { positive: 0, negative: -0 })
+      },
+      inputs: [],
+    },
+  )
+  const starts = atlas.reach(0).states
+  expect(starts.map(atlas.encode)).toEqual([0, -0])
+  expect(
+    starts.map(state => atlas.observe(state).screen.children),
+  ).toMatchObject([[{ text: 'positive' }], [{ text: 'negative' }]])
+  expect(atlas.groups(starts)).toHaveLength(2)
 })
 
 const weather = () => make(weatherProgram, weatherEnvironment)

@@ -1,12 +1,128 @@
-import { Array, Option } from 'effect'
+import { Array, Effect, Option, Schema } from 'effect'
+import { Command } from 'foldkit'
 import * as Scene from 'foldkit/scene'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 import { signupEnvironment } from '../programs'
 import * as Signup from '../signup/main'
 import { properties } from '../signup/properties'
-import { make } from './atlas'
+import { answer, describe, make, pendingRequests, send } from './atlas'
+import { fixture } from './fixture'
 import { Message, makeLab } from './lab'
+
+test.each([
+  { value: 0n, expected: '0n' },
+  { value: undefined, expected: 'undefined' },
+])(
+  'Explore can inspect and describe a $expected Model',
+  ({ value, expected }) => {
+    const atlas = make(
+      {
+        name: 'Data Model',
+        Model: Schema.Unknown,
+        Message: Schema.Number,
+        start: () => ({ model: value }),
+        update: model => ({ model }),
+        view: (_model, h) => h.p([], ['Preview']),
+      },
+      { *starts() {} },
+    )
+    const lab = makeLab([atlas])
+    Scene.scene(
+      lab,
+      Scene.given(lab.init().model),
+      Scene.tap(simulation => {
+        const model = Option.getOrThrow(
+          Scene.find(simulation.html, '.inspector-model'),
+        )
+        expect(Scene.textContent(model)).toContain(expected)
+      }),
+    )
+    expect(describe(atlas, 0)).toContain(expected)
+  },
+)
+
+test.each([false, true])(
+  'the inspector checks only declared properties (%s)',
+  hasProperties => {
+    const atlas = make(
+      {
+        name: 'Counter',
+        Model: Schema.Number,
+        Message: Schema.Number,
+        start: () => ({ model: 0 }),
+        update: model => ({ model }),
+        view: (_model, h) => h.p([], ['Preview']),
+      },
+      { *starts() {} },
+      {
+        properties: hasProperties
+          ? [{ name: 'Non-negative', state: ({ model }) => model >= 0 }]
+          : [],
+      },
+    )
+    const check = vi.fn(atlas.check)
+    const lab = makeLab([{ ...atlas, check }])
+    Scene.scene(lab, Scene.given(lab.init().model))
+    if (hasProperties) {
+      expect(check).toHaveBeenCalledWith(1)
+    } else {
+      expect(check).not.toHaveBeenCalled()
+    }
+  },
+)
+
+const ReadNumber = Command.define('ReadNumber', {
+  messages: [Schema.Number],
+  execute: Effect.die('Exploration must not execute Commands'),
+})
+
+test('a fixture-free Answer is shown as a Command reply and can be selected', () => {
+  const atlas = make(
+    {
+      name: 'Deterministic reply',
+      Model: Schema.Number,
+      Message: Schema.Number,
+      start: () => ({ model: 0, commands: [ReadNumber()] }),
+      update: (_model, message) => ({ model: message }),
+      view: (model, h) => h.p([], [String(model)]),
+    },
+    {
+      *starts() {},
+      *next(state) {
+        const request = Object.values(pendingRequests(state, ReadNumber))[0]
+        return request === undefined
+          ? send(yield* fixture<number>('done', {}))
+          : answer(request, 1)
+      },
+    },
+  )
+  const root = Option.getOrThrow(Array.head(atlas.reach(0).states))
+  const reply = Option.getOrThrow(Array.head(atlas.successors(root)))
+  const lab = makeLab([atlas])
+  Scene.scene(
+    lab,
+    Scene.given(lab.init().model),
+    Scene.tap(simulation => {
+      const inspector = Option.getOrThrow(
+        Scene.find(simulation.html, 'aside.inspector'),
+      )
+      expect(Scene.textContent(inspector)).toContain('replies with')
+      expect(Scene.textContent(inspector)).not.toContain('User actions')
+    }),
+    Scene.click(Scene.role('button', { name: `${reply.label} ${reply.to}` })),
+    Scene.tap(simulation => {
+      expect(
+        Scene.textContent(
+          Option.getOrThrow(
+            Scene.find(simulation.html, '.inspector-head strong'),
+          ),
+        ),
+      ).toBe(reply.to)
+      expect(atlas.pending(reply.to)).toEqual([])
+    }),
+  )
+})
 
 test('grouped gallery renders through Foldkit and interactions use selected execution', () => {
   const atlas = make(

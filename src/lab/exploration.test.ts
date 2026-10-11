@@ -461,6 +461,46 @@ test('direct successor inspection is bounded and resumes only with a higher limi
   expect(updates).toEqual([0, 1, 2, 3])
 })
 
+test('passive successor reads do not prepare or publish buffered alternatives', () => {
+  const updates: Array<number> = []
+  const atlas = make(
+    {
+      ...numberProgram,
+      update: (_model, message) => {
+        updates.push(message)
+        return { model: message }
+      },
+    },
+    {
+      *starts() {
+        return -1
+      },
+      *next({ model }) {
+        return move(yield* fixture('move', model === -1 ? numbers(3) : {}))
+      },
+    },
+  )
+  const root = Option.getOrThrow(
+    Array.head(atlas.reach(0, 'breadth', { transitions: 1 }).states),
+  )
+  expect(atlas.successorStatus(root)).toBe('unseen')
+  expect(atlas.knownSuccessors(root)).toEqual([])
+  expect(updates).toEqual([])
+
+  const published = atlas.successors(root, { states: 2 })
+  expect(published).toHaveLength(1)
+  expect(updates).toEqual([0, 1])
+  expect(atlas.successorStatus(root)).toBe('partial')
+  expect(atlas.knownSuccessors(root)).toEqual(published)
+  expect(updates).toEqual([0, 1])
+
+  const resumed = atlas.successors(root, { states: 4 })
+  expect(resumed.map(step => atlas.encode(step.to))).toEqual([0, 1, 2])
+  expect(resumed[0]).toBe(published[0])
+  expect(atlas.successorStatus(root)).toBe('complete')
+  expect(updates).toEqual([0, 1, 2])
+})
+
 test('transition properties check valid undefined Messages', () => {
   const checked: Array<undefined> = []
   const atlas = make<number, undefined, number>(

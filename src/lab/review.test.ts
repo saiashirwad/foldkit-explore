@@ -82,6 +82,40 @@ const lab = () =>
     ],
   )
 
+test.each([
+  Review.Message.SelectedFinding({ finding: 'F1' }),
+  Review.Message.SelectedProperty({ property: 'Positive' }),
+])('selecting evidence preserves pagination ($_tag)', message => {
+  const review = Review.makeReview([])
+  const expanded = review.update(
+    Review.initial(),
+    Review.Message.ClickedShowMore(),
+  ).model
+  const viewed = review.update(
+    review.update(expanded, Review.Message.SelectedExample({ example: 2 }))
+      .model,
+    Review.Message.SelectedTraceStep({ step: 3 }),
+  ).model
+  const selected = review.update(viewed, message).model
+  expect(selected.limit).toBe(48)
+  expect(selected.example).toBe(0)
+  expect(selected.step).toBe(-1)
+  expect(selected.replay._tag).toBe('Idle')
+})
+
+test.each([
+  Review.Message.SelectedComparison({ name: 'Other' }),
+  Review.Message.ClickedDeeper(),
+  Review.Message.ClickedShallower(),
+])('changing the search resets pagination ($_tag)', message => {
+  const review = Review.makeReview([])
+  const expanded = review.update(
+    Review.initial(),
+    Review.Message.ClickedShowMore(),
+  ).model
+  expect(review.update(expanded, message).model.limit).toBe(24)
+})
+
 test('Compare mode shows grouped previews and replays the chosen trace through the inspector', () => {
   const application = lab()
   Scene.scene(

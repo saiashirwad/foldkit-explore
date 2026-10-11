@@ -21,7 +21,7 @@ export function* fixture<const Value>(
 ): Choices<Value> {
   const chosen = yield { name, cases }
   return Option.getOrThrowWith(
-    Array.findFirst(Record.values(cases), value => value === chosen),
+    Array.findFirst(Record.values(cases), value => Object.is(value, chosen)),
     () => new Error(`Fixture "${name}" received a value it does not offer.`),
   )
 }

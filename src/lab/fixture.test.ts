@@ -6,6 +6,26 @@ import { type Choices, fixture, outcomes } from './fixture'
 const values = <Output>(choices: () => Choices<Output>) =>
   Array.map(Array.fromIterable(outcomes(choices)), ({ value }) => value)
 
+test('fixtures preserve NaN, signed zero, undefined, and offered references', () => {
+  const offered = { name: 'Ada' }
+  function* choices(): Choices<unknown> {
+    return yield* fixture<unknown>('value', {
+      nan: NaN,
+      zero: 0,
+      negativeZero: -0,
+      missing: undefined,
+      object: offered,
+    })
+  }
+  const result = values(choices)
+  expect(result).toHaveLength(5)
+  expect(result[0]).toBeNaN()
+  expect(result[1]).toBe(0)
+  expect(result[2]).toBe(-0)
+  expect(result[3]).toBeUndefined()
+  expect(result[4]).toBe(offered)
+})
+
 test('nested choices compose with their own value types', () => {
   function* enabled(): Choices<boolean> {
     return yield* fixture('enabled', { no: false, yes: true })

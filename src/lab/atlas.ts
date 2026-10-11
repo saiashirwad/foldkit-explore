@@ -3,6 +3,7 @@ import type { Update } from 'foldkit'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 import { defineView } from 'foldkit/submodel'
 
+import { formatValue } from './display'
 import { type Choices, Decision, type Outcome, outcomes } from './fixture'
 import { makeIdentity } from './identity'
 import { type InputDomain, inspect } from './interactions'
@@ -219,6 +220,12 @@ type Arrival<Model, Message, Input> = Hop &
     maybeMessageValue: Option.Option<Message>
   }>
 
+type PreparedArrival<Model, Message, Input> = {
+  readonly arrival: Arrival<Model, Message, Input>
+  readonly key: unknown
+  maybeStep: Option.Option<Step>
+}
+
 type Source<Value> = {
   iterator: Iterator<Outcome<Value>>
   values: Array<Outcome<Value>>
@@ -284,9 +291,6 @@ const limitsOf = (
   ),
 })
 
-// NOTE: Sources retain their iterator and every yielded alternative. A stop
-// before admission therefore resumes the same alternative without replaying
-// start or update. Transition work includes starts, even when states merge.
 export const make = <Model, Message, Input = void>(
   program: Program<Model, Message, Input>,
   environment: Environment<Model, Message, Input>,
@@ -300,9 +304,10 @@ export const make = <Model, Message, Input = void>(
   const screens = makeIdentity()
   const nodes = new Map<string, Node<Model, Message, Input>>()
   const idOf = new Map<unknown, string>()
-  const arrivals = new WeakMap<object, Arrival<Model, Message, Input>>()
-  const arrivalKeys = new WeakMap<object, unknown>()
-  const steps = new WeakMap<object, Step>()
+  const preparedArrivals = new WeakMap<
+    object,
+    PreparedArrival<Model, Message, Input>
+  >()
   const messages = new WeakMap<Step, Readonly<{ message: Message }>>()
   const sources = new Map<string, Source<Transition<Message>>>()
   const inspections = new Map<
@@ -354,26 +359,25 @@ export const make = <Model, Message, Input = void>(
       }
     })
 
-  const arrivalKey = (arrival: Arrival<Model, Message, Input>): unknown => {
-    const known = arrivalKeys.get(arrival)
-    if (known !== undefined) {
-      return known
-    }
-    const key = identity.of([
+  const prepare = (
+    arrival: Arrival<Model, Message, Input>,
+  ): PreparedArrival<Model, Message, Input> => ({
+    arrival,
+    key: identity.of([
       arrival.input,
       arrival.model,
       describeCommands(arrival.pending),
-    ])
-    arrivalKeys.set(arrival, key)
-    return key
-  }
+    ]),
+    maybeStep: Option.none(),
+  })
 
-  const arrive = (arrival: Arrival<Model, Message, Input>): Step => {
-    const knownStep = steps.get(arrival)
-    if (knownStep !== undefined) {
-      return knownStep
+  const publishArrival = (
+    prepared: PreparedArrival<Model, Message, Input>,
+  ): Step => {
+    if (Option.isSome(prepared.maybeStep)) {
+      return prepared.maybeStep.value
     }
-    const key = arrivalKey(arrival)
+    const { arrival, key } = prepared
     const known = idOf.get(key)
     const step: Step = {
       kind: arrival.kind,
@@ -399,7 +403,7 @@ export const make = <Model, Message, Input = void>(
       })
       revision.value += 1
     }
-    steps.set(arrival, step)
+    prepared.maybeStep = Option.some(step)
     Option.match(arrival.maybeMessageValue, {
       onNone: () => undefined,
       onSome: message => messages.set(step, { message }),
@@ -408,15 +412,15 @@ export const make = <Model, Message, Input = void>(
     return step
   }
 
-  const startArrival = (
+  const prepareStart = (
     outcome: Outcome<Input>,
-  ): Arrival<Model, Message, Input> => {
-    const known = arrivals.get(outcome)
+  ): PreparedArrival<Model, Message, Input> => {
+    const known = preparedArrivals.get(outcome)
     if (known !== undefined) {
       return known
     }
     const started = program.start(outcome.value)
-    const arrival: Arrival<Model, Message, Input> = {
+    const prepared = prepare({
       kind: 'Start',
       decisions: outcome.decisions,
       maybeMessage: Option.none(),
@@ -428,9 +432,9 @@ export const make = <Model, Message, Input = void>(
       model: started.model,
       pending: started.commands ?? [],
       maybeMessageValue: Option.none(),
-    }
-    arrivals.set(outcome, arrival)
-    return arrival
+    })
+    preparedArrivals.set(outcome, prepared)
+    return prepared
   }
 
   const after = (
@@ -450,11 +454,11 @@ export const make = <Model, Message, Input = void>(
     }
   }
 
-  const nextArrival = (
+  const prepareNext = (
     node: Node<Model, Message, Input>,
     outcome: Outcome<Transition<Message>>,
-  ): Arrival<Model, Message, Input> => {
-    const known = arrivals.get(outcome)
+  ): PreparedArrival<Model, Message, Input> => {
+    const known = preparedArrivals.get(outcome)
     if (known !== undefined) {
       return known
     }
@@ -462,7 +466,14 @@ export const make = <Model, Message, Input = void>(
     if (!isMessage(value.message)) {
       throw new Error(`${program.name}: next returned an invalid Message.`)
     }
-    const hop = { decisions, maybeMessage: Option.none() }
+    if (
+      value.kind === 'Answer' &&
+      node.pending[value.request.index] !== value.request.command
+    ) {
+      throw new Error(
+        `${program.name}: answer must select a pending Command from this state.`,
+      )
+    }
     const interactions =
       environment.inputs === undefined ? [] : inspection(node).interactions
     const label = Array.join(
@@ -474,31 +485,18 @@ export const make = <Model, Message, Input = void>(
       ),
       ' ',
     )
-    const create = (): Arrival<Model, Message, Input> => {
-      if (value.kind === 'Move') {
-        return {
-          ...hop,
-          kind: 'Move',
-          label,
-          ...after(node, value),
-        }
-      }
-      const { index, command } = value.request
-      if (node.pending[index] !== command) {
-        throw new Error(
-          `${program.name}: answer must select a pending Command from this state.`,
-        )
-      }
-      return {
-        ...hop,
-        kind: 'Answer',
-        label: `${command.name} #${index + 1} ${label}`.trimEnd(),
-        ...after(node, value),
-      }
-    }
-    const arrival = create()
-    arrivals.set(outcome, arrival)
-    return arrival
+    const prepared = prepare({
+      kind: value.kind,
+      decisions,
+      maybeMessage: Option.none(),
+      label:
+        value.kind === 'Move'
+          ? label
+          : `${value.request.command.name} #${value.request.index + 1} ${label}`.trimEnd(),
+      ...after(node, value),
+    })
+    preparedArrivals.set(outcome, prepared)
+    return prepared
   }
 
   const sourceOf = (id: string): Source<Transition<Message>> => {
@@ -555,15 +553,12 @@ export const make = <Model, Message, Input = void>(
     return Option.some(item.value)
   }
 
+  const knownStep = <Value>(outcome: Outcome<Value>): Option.Option<Step> =>
+    preparedArrivals.get(outcome)?.maybeStep ?? Option.none()
+
   const knownSuccessors = (id: string): ReadonlyArray<Step> => {
     nodeOf(id)
-    return Array.getSomes(
-      Array.map(sources.get(id)?.values ?? [], outcome =>
-        Option.flatMap(Option.fromNullishOr(arrivals.get(outcome)), arrival =>
-          Option.fromNullishOr(steps.get(arrival)),
-        ),
-      ),
-    )
+    return Array.getSomes(Array.map(sources.get(id)?.values ?? [], knownStep))
   }
 
   const successors = (
@@ -584,15 +579,15 @@ export const make = <Model, Message, Input = void>(
       if (Option.isNone(maybeOutcome)) {
         return result
       }
-      const arrival = nextArrival(node, maybeOutcome.value)
-      const known = idOf.get(arrivalKey(arrival))
+      const prepared = prepareNext(node, maybeOutcome.value)
+      const known = idOf.get(prepared.key)
       if (
         (known === undefined || !admitted.has(known)) &&
         admitted.size >= bound.states
       ) {
         return result
       }
-      const step = arrive(arrival)
+      const step = publishArrival(prepared)
       admitted.add(step.to)
       result.push(step)
       cursor.index += 1
@@ -663,30 +658,30 @@ export const make = <Model, Message, Input = void>(
     }
 
     const admit = (
-      arrival: Arrival<Model, Message, Input>,
+      prepared: PreparedArrival<Model, Message, Input>,
       distance: number,
     ): Option.Option<Step> => {
-      const knownId = idOf.get(arrivalKey(arrival))
+      const knownId = idOf.get(prepared.key)
       const knownDistance =
         knownId === undefined ? undefined : distances.get(knownId)
       if (knownDistance === undefined && distance > depth) {
-        deferred.add(arrival)
+        deferred.add(prepared)
         return Option.none()
       }
       if (knownDistance === undefined && order.length >= bound.states) {
-        deferred.add(arrival)
+        deferred.add(prepared)
         progress.stopped = 'state-limit'
         return Option.none()
       }
-      deferred.delete(arrival)
-      const step = arrive(arrival)
+      deferred.delete(prepared)
+      const step = publishArrival(prepared)
       if (knownDistance === undefined) {
         order.push(step.to)
         counters.states += 1
       }
       if (knownDistance === undefined || distance < knownDistance) {
         distances.set(step.to, distance)
-        const prefix = Option.match(arrival.maybeFrom, {
+        const prefix = Option.match(prepared.arrival.maybeFrom, {
           onNone: () => [],
           onSome: from => paths.get(from.id) ?? [],
         })
@@ -711,17 +706,13 @@ export const make = <Model, Message, Input = void>(
       } else if (item.kind === 'value') {
         startOutcomes.push(item.outcome)
         if (search !== 'random') {
-          admit(startArrival(item.outcome), 0)
+          admit(prepareStart(item.outcome), 0)
         }
         progress.startIndex += 1
       }
     }
 
-    const expand = (
-      id: string,
-      distance: number,
-      visit: (step: Step) => void,
-    ) => {
+    const expand = (id: string, distance: number) => {
       const current = sourceOf(id)
       const node = nodeOf(id)
       const cursor = { index: 0, done: false }
@@ -733,10 +724,9 @@ export const make = <Model, Message, Input = void>(
           frontier.delete(id)
           cursor.done = true
         } else if (item.kind === 'value') {
-          const maybeStep = admit(nextArrival(node, item.outcome), distance + 1)
+          const maybeStep = admit(prepareNext(node, item.outcome), distance + 1)
           if (Option.isSome(maybeStep)) {
             record(id, maybeStep.value)
-            visit(maybeStep.value)
           } else {
             cursor.done = true
           }
@@ -750,7 +740,7 @@ export const make = <Model, Message, Input = void>(
       while (progress.stopped === undefined && cursor.index < order.length) {
         const id = order[cursor.index]
         if (id !== undefined) {
-          expand(id, distances.get(id) ?? 0, () => undefined)
+          expand(id, distances.get(id) ?? 0)
         }
         cursor.index += 1
       }
@@ -780,7 +770,7 @@ export const make = <Model, Message, Input = void>(
         } else if (item.kind === 'value') {
           frame.index += 1
           const maybeStep = admit(
-            nextArrival(nodeOf(frame.id), item.outcome),
+            prepareNext(nodeOf(frame.id), item.outcome),
             frame.distance + 1,
           )
           if (Option.isNone(maybeStep)) {
@@ -806,7 +796,7 @@ export const make = <Model, Message, Input = void>(
           return
         }
         sampledStarts.add(starting)
-        const walk = { at: admit(startArrival(starting), 0), distance: 0 }
+        const walk = { at: admit(prepareStart(starting), 0), distance: 0 }
         while (
           progress.stopped === undefined &&
           Option.isSome(walk.at) &&
@@ -836,7 +826,7 @@ export const make = <Model, Message, Input = void>(
             walk.at = Option.none()
           } else {
             walk.at = admit(
-              nextArrival(nodeOf(id), selected),
+              prepareNext(nodeOf(id), selected),
               walk.distance + 1,
             )
             if (Option.isSome(walk.at)) {
@@ -851,12 +841,9 @@ export const make = <Model, Message, Input = void>(
         if (
           environment.next === undefined ||
           (current?.done &&
-            current.values.every(outcome => {
-              const arrival = arrivals.get(outcome)
-              const step =
-                arrival === undefined ? undefined : steps.get(arrival)
-              return step !== undefined && distances.has(step.to)
-            }))
+            current.values.every(outcome =>
+              Option.exists(knownStep(outcome), step => distances.has(step.to)),
+            ))
         ) {
           expanded.set(id, distances.get(id) ?? 0)
           frontier.delete(id)
@@ -876,9 +863,7 @@ export const make = <Model, Message, Input = void>(
     })
     const status: ReachStatus =
       progress.stopped ??
-      (progress.startsDone && Array.isArrayEmpty(Array.fromIterable(frontier))
-        ? 'complete'
-        : 'depth-limit')
+      (progress.startsDone && frontier.size === 0 ? 'complete' : 'depth-limit')
     const result: SearchResult = {
       reach: {
         states: order,
@@ -909,13 +894,15 @@ export const make = <Model, Message, Input = void>(
     }
     const node = nodeOf(id)
     return Option.some(
-      arrive({
-        kind: 'Event',
-        decisions: [],
-        maybeMessage: Option.some(encodeMessage(message)),
-        label: tagOf(message),
-        ...after(node, send(message)),
-      }).to,
+      publishArrival(
+        prepare({
+          kind: 'Event',
+          decisions: [],
+          maybeMessage: Option.some(encodeMessage(message)),
+          label: tagOf(message),
+          ...after(node, send(message)),
+        }),
+      ).to,
     )
   }
 
@@ -955,7 +942,7 @@ export const make = <Model, Message, Input = void>(
         )
       ) {
         return Option.some(
-          arrive(nextArrival(nodeOf(id), maybeOutcome.value)).to,
+          publishArrival(prepareNext(nodeOf(id), maybeOutcome.value)).to,
         )
       }
       cursor.index += 1
@@ -978,8 +965,7 @@ export const make = <Model, Message, Input = void>(
       if (Option.isNone(maybeOutcome)) {
         return Option.none()
       }
-      const arrival = startArrival(maybeOutcome.value)
-      const step = arrive(arrival)
+      const step = publishArrival(prepareStart(maybeOutcome.value))
       if (isSameHop(step, hop)) {
         return Option.some(step.to)
       }
@@ -1076,10 +1062,7 @@ export const make = <Model, Message, Input = void>(
       const current = sources.get(id)
       return environment.next === undefined ||
         (current?.done &&
-          current.values.every(outcome => {
-            const arrival = arrivals.get(outcome)
-            return arrival !== undefined && steps.has(arrival)
-          }))
+          current.values.every(outcome => Option.isSome(knownStep(outcome))))
         ? 'complete'
         : current === undefined
           ? 'unseen'
@@ -1097,7 +1080,7 @@ export const make = <Model, Message, Input = void>(
     pending: id =>
       Array.map(nodeOf(id).pending, command => ({
         name: command.name,
-        args: JSON.stringify(command.args ?? {}),
+        args: formatValue(command.args ?? {}),
       })),
     encode: id => encodeModel(nodeOf(id).model),
     fixtures: () =>
@@ -1126,7 +1109,7 @@ export const describe = (atlas: Atlas, depth: number): string => {
       Array.map(atlas.trace(id), step => step.label),
       ' › ',
     )}`,
-    `    ${JSON.stringify(atlas.encode(id))}`,
+    `    ${formatValue(atlas.encode(id))}`,
     ...Array.map(
       atlas.pending(id),
       ({ name, args }) => `    pending ${name} ${args}`,

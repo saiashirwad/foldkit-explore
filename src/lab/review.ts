@@ -14,6 +14,7 @@ import type {
   ComparisonSide,
   ComparisonStep,
 } from './compare'
+import { formatValue } from './display'
 
 export type ComparisonCase = Readonly<{
   name: string
@@ -45,13 +46,15 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
+const PAGE = 24
+
 export const initial = (): Model => ({
   scenario: '',
   depth: 8,
   selection: Selection.Automatic(),
   example: 0,
   step: -1,
-  limit: 24,
+  limit: PAGE,
   replay: Replay.Idle(),
 })
 
@@ -146,18 +149,7 @@ const statusLabel = (comparison: Comparison): string =>
     : `incomplete · ${comparison.status.replace('-limit', ' limit')}`
 
 const json = (value: unknown): string =>
-  value === undefined
-    ? 'Not present'
-    : (JSON.stringify(
-        value,
-        (_key: string, child: unknown) =>
-          typeof child === 'bigint'
-            ? `${child}n`
-            : child === undefined
-              ? 'undefined'
-              : child,
-        2,
-      ) ?? String(value))
+  value === undefined ? 'Not present' : formatValue(value, 2)
 
 const previewView = (
   comparison: Comparison,
@@ -633,25 +625,24 @@ export const makeReview = (cases: ReadonlyArray<ComparisonCase>) => {
       selection: () => Selection.Automatic(),
       example: () => 0,
       step: () => -1,
-      limit: () => 24,
       replay: () => Replay.Idle(),
     })
 
   const update = (model: Model, message: Message) =>
     Message.match<Update.Return<Model, Message>>(message, {
       SelectedComparison: ({ name }) => ({
-        model: resetSelection(modifyFields(model, { scenario: () => name })),
+        model: resetSelection(
+          modifyFields(model, { scenario: () => name, limit: () => PAGE }),
+        ),
       }),
       SelectedFinding: ({ finding }) => ({
         model: modifyFields(resetSelection(model), {
           selection: () => Selection.Finding({ id: finding }),
-          limit: () => model.limit,
         }),
       }),
       SelectedProperty: ({ property }) => ({
         model: modifyFields(resetSelection(model), {
           selection: () => Selection.Property({ id: property }),
-          limit: () => model.limit,
         }),
       }),
       SelectedExample: ({ example }) => ({
@@ -666,16 +657,19 @@ export const makeReview = (cases: ReadonlyArray<ComparisonCase>) => {
       }),
       ClickedDeeper: () => ({
         model: resetSelection(
-          modifyFields(model, { depth: depth => depth + 1 }),
+          modifyFields(model, { depth: depth => depth + 1, limit: () => PAGE }),
         ),
       }),
       ClickedShallower: () => ({
         model: resetSelection(
-          modifyFields(model, { depth: depth => Math.max(0, depth - 1) }),
+          modifyFields(model, {
+            depth: depth => Math.max(0, depth - 1),
+            limit: () => PAGE,
+          }),
         ),
       }),
       ClickedShowMore: () => ({
-        model: modifyFields(model, { limit: limit => limit + 24 }),
+        model: modifyFields(model, { limit: limit => limit + PAGE }),
       }),
       ClickedReset: () => ({
         model: modifyFields(initial(), { scenario: () => model.scenario }),

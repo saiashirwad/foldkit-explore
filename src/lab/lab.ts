@@ -10,6 +10,7 @@ import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 
 import { Address, type Atlas, Search, type Step } from './atlas'
+import { formatValue } from './display'
 import * as Review from './review'
 
 // MODEL
@@ -314,6 +315,24 @@ const destinationView = (
     ? h.span([h.Class('row-state is-same')], ['no change'])
     : h.span([h.Class('row-state')], [step.to])
 
+const nextRow = (
+  slot: string,
+  current: string,
+  step: Step,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.button(
+    [
+      h.Class('row'),
+      h.AriaLabel(`${step.label} ${step.to}`),
+      h.OnClick(Message.ClickedStep({ slot, state: step.to })),
+    ],
+    [
+      h.span([h.Class('row-label')], [step.label]),
+      destinationView(step, current, h),
+    ],
+  )
+
 type Branch = Readonly<{
   depth: number
   decision: Step['decisions'][number]
@@ -380,32 +399,38 @@ const answersView = (
 ): Html =>
   h.div(
     [h.Class('tree')],
-    Array.map(
-      branchesOf(
-        Array.map(steps, step => ({ options: optionsOf(step), step })),
-        0,
+    [
+      ...Array.map(
+        Array.filter(steps, step => Array.isReadonlyArrayEmpty(step.decisions)),
+        step => nextRow(slot, current, step, h),
       ),
-      ({ depth, decision, maybeStep }) => {
-        const label = [
-          h.span([h.Class('tree-key')], [decision.fixture]),
-          h.span([h.Class('tree-value')], [decision.option]),
-        ]
-        const style = h.Style({ '--depth': `${depth}` })
-        return Option.match(maybeStep, {
-          onNone: () => h.div([h.Class('tree-row'), style], label),
-          onSome: step =>
-            h.button(
-              [
-                h.Class('tree-row is-leaf'),
-                style,
-                h.AriaLabel(`${step.label} ${step.to}`),
-                h.OnClick(Message.ClickedStep({ slot, state: step.to })),
-              ],
-              [...label, destinationView(step, current, h)],
-            ),
-        })
-      },
-    ),
+      ...Array.map(
+        branchesOf(
+          Array.map(steps, step => ({ options: optionsOf(step), step })),
+          0,
+        ),
+        ({ depth, decision, maybeStep }) => {
+          const label = [
+            h.span([h.Class('tree-key')], [decision.fixture]),
+            h.span([h.Class('tree-value')], [decision.option]),
+          ]
+          const style = h.Style({ '--depth': `${depth}` })
+          return Option.match(maybeStep, {
+            onNone: () => h.div([h.Class('tree-row'), style], label),
+            onSome: step =>
+              h.button(
+                [
+                  h.Class('tree-row is-leaf'),
+                  style,
+                  h.AriaLabel(`${step.label} ${step.to}`),
+                  h.OnClick(Message.ClickedStep({ slot, state: step.to })),
+                ],
+                [...label, destinationView(step, current, h)],
+              ),
+          })
+        },
+      ),
+    ],
   )
 
 const nextView = (
@@ -414,12 +439,8 @@ const nextView = (
   steps: ReadonlyArray<Step>,
   h: HtmlBuilder<Message>,
 ): ReadonlyArray<Html> => {
-  const moves = Array.filter(steps, step =>
-    Array.isReadonlyArrayEmpty(optionsOf(step)),
-  )
-  const answers = Array.filter(steps, step =>
-    Array.isReadonlyArrayNonEmpty(optionsOf(step)),
-  )
+  const moves = Array.filter(steps, step => step.kind === 'Move')
+  const answers = Array.filter(steps, step => step.kind === 'Answer')
   return [
     ...(Array.isReadonlyArrayNonEmpty(moves)
       ? [
@@ -427,19 +448,7 @@ const nextView = (
             [h.Class('next-group')],
             [
               h.div([h.Class('next-title')], ['User actions']),
-              ...Array.map(moves, step =>
-                h.button(
-                  [
-                    h.Class('row'),
-                    h.AriaLabel(`${step.label} ${step.to}`),
-                    h.OnClick(Message.ClickedStep({ slot, state: step.to })),
-                  ],
-                  [
-                    h.span([h.Class('row-label')], [step.label]),
-                    destinationView(step, current, h),
-                  ],
-                ),
-              ),
+              ...Array.map(moves, step => nextRow(slot, current, step, h)),
             ],
           ),
         ]
@@ -484,9 +493,9 @@ const tokenKind = (parts: ReadonlyArray<string>, index: number): string => {
 }
 
 // NOTE: Splitting on a capturing pattern alternates text and tokens, so odd
-// parts are tokens. Objects holding only a tag fit on one line.
+// parts are tokens.
 const modelView = (value: unknown, h: HtmlBuilder<Message>): Html => {
-  const parts = JSON.stringify(value, null, 2)
+  const parts = formatValue(value, 2)
     .replace(/\{\n\s*("_tag": "[^"]*")\n\s*\}/g, '{ $1 }')
     .split(JSON_TOKEN)
   return h.pre(
@@ -538,7 +547,9 @@ const inspectorView = (
   search: Search,
   h: HtmlBuilder<Message>,
 ): Html => {
-  const failures = atlas.check(depth)
+  const failures = Array.isReadonlyArrayEmpty(atlas.propertyNames)
+    ? []
+    : atlas.check(depth)
   const reached = atlas.reach(depth, search)
   const isComplete = reached.status === 'complete'
   const trace = atlas.trace(card.state)

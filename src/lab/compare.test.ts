@@ -129,6 +129,8 @@ test('matches a Message after a copy edit and groups each repeated heading chang
   )
   expect(heading?.examples).toHaveLength(3)
   expect(heading?.shortest.depth).toBe(0)
+  expect(heading?.examples[1]?.trace[1]?.beforeEvent).toBeDefined()
+  expect(heading?.examples[1]?.trace[1]?.afterEvent).toBeDefined()
   expect(heading?.examples[1]?.trace[1]?.beforeEvent?.key).toBe(
     heading?.examples[1]?.trace[1]?.afterEvent?.key,
   )
@@ -372,7 +374,13 @@ test('partial event enumeration stays unknown and resumes without dropping alter
 })
 
 test('a state limit preserves the already consumed transition for resumption', () => {
-  const program = numeric()
+  const updates: Array<number> = []
+  const program = numeric({
+    update: (_model, message) => {
+      updates.push(message)
+      return { model: message }
+    },
+  })
   const result = compare({
     before: program,
     after: program,
@@ -385,6 +393,9 @@ test('a state limit preserves the already consumed transition for resumption', (
     afterStates: 1,
     transitions: 3,
   })
+  expect(updates).toEqual([1, 1])
+  result.resume({ depth: 2, states: 1, pairs: 10, transitions: 20 })
+  expect(updates).toEqual([1, 1])
   result.resume({ depth: 2, states: 3, pairs: 10, transitions: 20 })
   expect(result.status).toBe('complete')
   expect(result.counters).toMatchObject({
@@ -392,7 +403,49 @@ test('a state limit preserves the already consumed transition for resumption', (
     afterStates: 3,
     transitions: 5,
   })
+  expect(updates).toEqual([1, 1, 2, 2])
   expect(result.findings).toEqual([])
+})
+
+test('a blocked starting pair resumes without repeating initialization', () => {
+  const started: Array<number> = []
+  const program = numeric({
+    start: input => {
+      started.push(input)
+      return { model: input }
+    },
+  })
+  const initialLimits = { depth: 0, states: 0, pairs: 10, transitions: 20 }
+  const result = compare({
+    before: program,
+    after: program,
+    environment: environment(),
+    limits: initialLimits,
+  })
+  expect(result.status).toBe('state-limit')
+  expect(result.counters).toMatchObject({
+    starts: 1,
+    beforeStates: 0,
+    afterStates: 0,
+    pairs: 0,
+    transitions: 1,
+  })
+  expect(started).toEqual([0, 0])
+  result.resume(initialLimits)
+  expect(started).toEqual([0, 0])
+  const resumedLimits = { ...initialLimits, states: 1 }
+  result.resume(resumedLimits)
+  expect(started).toEqual([0, 0])
+  expect(result.status).toBe('complete')
+  const fresh = compare({
+    before: numeric(),
+    after: numeric(),
+    environment: environment(),
+    limits: resumedLimits,
+  })
+  expect(result.counters).toEqual(fresh.counters)
+  expect(result.findings).toEqual(fresh.findings)
+  expect(result.unfinishedWork).toEqual(fresh.unfinishedWork)
 })
 
 test('pair limits count pairs separately from the states on either side', () => {
@@ -523,7 +576,9 @@ test('compares newly issued Commands even after pending queues converge', () => 
     .filter(finding => finding.kind === 'commands')
     .flatMap(finding => finding.examples)
     .find(example => example.depth === 1)
-  expect(event?.before?.pending).toEqual(event?.after?.pending)
+  const expectedPending = [{ name: ReadValue.name, args: { value: 1 } }]
+  expect(event?.before?.pending).toEqual(expectedPending)
+  expect(event?.after?.pending).toEqual(expectedPending)
   expect(event?.trace[1]?.beforeIssued).toEqual([])
   expect(event?.trace[1]?.afterIssued).toHaveLength(1)
 })
@@ -556,6 +611,40 @@ test('compatible protocols can compare different Model representations without r
   expect(result.status).toBe('complete')
   expect(result.findings).toEqual([])
   expect(result.counters.pairs).toBe(3)
+})
+
+test('bigint Messages have readable labels and replay through the real update', () => {
+  const before: Program<number, bigint> = {
+    name: 'Bigint Message before',
+    Model: Schema.Number,
+    Message: Schema.BigInt,
+    start: () => ({ model: 0 }),
+    update: (_model, message) => ({ model: Number(message) }),
+    view: (model, h) => h.p([], [`Before ${model}`]),
+  }
+  const after: Program<number, bigint> = {
+    ...before,
+    name: 'Bigint Message after',
+    view: (model, h) => h.p([], [`After ${model}`]),
+  }
+  const shared: Environment<number, bigint> = {
+    *starts() {},
+    *next({ model }) {
+      return send(
+        yield* fixture<bigint>('number', model === 0 ? { one: 1n } : {}),
+      )
+    },
+  }
+  const result = compare({ before, after, environment: shared, limits })
+  const example = Option.getOrThrow(
+    Array.findFirst(
+      result.findings.flatMap(finding => finding.examples),
+      example => example.depth === 1,
+    ),
+  )
+  expect(example.trace[1]?.beforeEvent?.label).toContain('1n')
+  expect(example.trace[1]?.beforeEvent?.message).toBe(1n)
+  expect(result.replay(example.trace).at(-1)?.after?.model).toBe(1)
 })
 
 test('starting inputs remain part of execution identity when future environment choices differ', () => {

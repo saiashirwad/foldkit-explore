@@ -14,6 +14,7 @@ import {
   remaining,
 } from './atlas'
 import { canonical } from './canonical'
+import { formatValue } from './display'
 import {
   type Choices,
   type Decision,
@@ -182,7 +183,6 @@ type Enumeration<Message> = {
   iterator: Iterator<Outcome<Transition<Message>>> | undefined
   status: SuccessorStatus
   events: Map<string, Event<Message>>
-  alternatives: number
 }
 
 type Pair<BeforeModel, AfterModel, Message, Input> = {
@@ -271,15 +271,16 @@ const changes = (
   return [{ path, before, after }]
 }
 
-const readable = (value: unknown): string =>
-  typeof value === 'string' ? value : (JSON.stringify(value) ?? 'absent')
-
 const actionLabel = (label: string): string => label.replace(/^click /, '')
 
 const messageLabel = (message: unknown): string =>
   Predicate.hasProperty(message, '_tag') && typeof message._tag === 'string'
     ? message._tag
-    : readable(message)
+    : typeof message === 'string'
+      ? message
+      : message === undefined
+        ? 'absent'
+        : formatValue(message)
 
 const commandsKeys = new WeakMap<ReadonlyArray<CommandDescription>, string>()
 
@@ -325,7 +326,6 @@ const enumeration = <Message>(): Enumeration<Message> => ({
   iterator: undefined,
   status: 'unseen',
   events: new Map(),
-  alternatives: 0,
 })
 
 const replayChoices = <Output>(
@@ -987,10 +987,10 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
       buffered.before !== undefined && buffered.after !== undefined
         ? arrive(buffered.before.node, buffered.after.node, trace)
         : pair
-    if (buffered.before !== undefined) {
+    if (buffered.before !== undefined && buffered.after === undefined) {
       beforeRuntime.nodes.set(buffered.before.node.key, buffered.before.node)
     }
-    if (buffered.after !== undefined) {
+    if (buffered.after !== undefined && buffered.before === undefined) {
       afterRuntime.nodes.set(buffered.after.node.key, buffered.after.node)
     }
     const evidence = example(target.id, trace)
@@ -1077,7 +1077,6 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
     } else {
       work.afterTransitions += 1
     }
-    cursor.alternatives += 1
     const selected = runtime.event(node, result.value)
     if (cursor.events.has(selected.evidence.key)) {
       throw new Error(
@@ -1288,8 +1287,8 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
           depth: pair.depth,
           before: pair.beforeEvents.status,
           after: pair.afterEvents.status,
-          beforeAlternatives: pair.beforeEvents.alternatives,
-          afterAlternatives: pair.afterEvents.alternatives,
+          beforeAlternatives: pair.beforeEvents.events.size,
+          afterAlternatives: pair.afterEvents.events.size,
         })
       })
       return pending
