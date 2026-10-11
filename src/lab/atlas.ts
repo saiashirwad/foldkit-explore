@@ -1,13 +1,16 @@
-import { Array, Option, Predicate, Schema, pipe } from 'effect'
+import { Array, Option, Predicate, Record, Schema, pipe } from 'effect'
 import type { Update } from 'foldkit'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 import { defineView } from 'foldkit/submodel'
 
-import { canonical } from './canonical'
 import { type Choices, Decision, type Outcome, outcomes } from './fixture'
 import { makeIdentity } from './identity'
 import { type InputDomain, inspect } from './interactions'
-import { type Observation, describeCommands } from './observation'
+import {
+  type Observation,
+  describeCommands,
+  observationOf,
+} from './observation'
 
 // PROGRAM
 
@@ -62,6 +65,19 @@ export const answer = <Message>(
   request: Request,
   message: Message,
 ): Transition<Message> => ({ kind: 'Answer', request, message })
+
+// NOTE: A Move keeps the pending queue; an Answer consumes exactly its
+// selected occurrence.
+export const remaining = <Message>(
+  pending: Update.Commands<Message>,
+  transition: Transition<Message>,
+): Update.Commands<Message> =>
+  transition.kind === 'Move'
+    ? pending
+    : Array.filter(
+        pending,
+        (_command, index) => index !== transition.request.index,
+      )
 
 // NOTE: Foldkit identifies Commands by name. Definitions used in one program
 // must have unique names; matching a definition recovers its typed arguments.
@@ -250,12 +266,23 @@ const random = (seed: number) => {
   }
 }
 
-const limit = (value: number, name: string): number => {
+export const limit = (value: number, name: string): number => {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`${name} must be a non-negative safe integer.`)
   }
   return value
 }
+
+const limitsOf = (
+  override: Limits,
+  fallback: ExplorationLimits,
+): ExplorationLimits => ({
+  states: limit(override.states ?? fallback.states, 'State limit'),
+  transitions: limit(
+    override.transitions ?? fallback.transitions,
+    'Transition limit',
+  ),
+})
 
 // NOTE: Sources retain their iterator and every yielded alternative. A stop
 // before admission therefore resumes the same alternative without replaying
@@ -265,14 +292,12 @@ export const make = <Model, Message, Input = void>(
   environment: Environment<Model, Message, Input>,
   options: Options<Model, Message> = {},
 ): Atlas => {
-  const limits: ExplorationLimits = {
-    states: limit(options.limits?.states ?? 5_000, 'State limit'),
-    transitions: limit(
-      options.limits?.transitions ?? 50_000,
-      'Transition limit',
-    ),
-  }
+  const limits = limitsOf(options.limits ?? {}, {
+    states: 5_000,
+    transitions: 50_000,
+  })
   const identity = makeIdentity()
+  const screens = makeIdentity()
   const nodes = new Map<string, Node<Model, Message, Input>>()
   const idOf = new Map<unknown, string>()
   const arrivals = new WeakMap<object, Arrival<Model, Message, Input>>()
@@ -337,7 +362,7 @@ export const make = <Model, Message, Input = void>(
     const key = identity.of([
       arrival.input,
       arrival.model,
-      Array.map(arrival.pending, command => [command.name, command.args ?? {}]),
+      describeCommands(arrival.pending),
     ])
     arrivalKeys.set(arrival, key)
     return key
@@ -410,16 +435,18 @@ export const make = <Model, Message, Input = void>(
 
   const after = (
     node: Node<Model, Message, Input>,
-    message: Message,
-    remaining: Update.Commands<Message>,
+    transition: Transition<Message>,
   ) => {
-    const updated = program.update(node.model, message)
+    const updated = program.update(node.model, transition.message)
     return {
       maybeFrom: Option.some(node),
       input: node.input,
       model: updated.model,
-      pending: Array.appendAll(remaining, updated.commands ?? []),
-      maybeMessageValue: Option.some(message),
+      pending: Array.appendAll(
+        remaining(node.pending, transition),
+        updated.commands ?? [],
+      ),
+      maybeMessageValue: Option.some(transition.message),
     }
   }
 
@@ -453,7 +480,7 @@ export const make = <Model, Message, Input = void>(
           ...hop,
           kind: 'Move',
           label,
-          ...after(node, value.message, node.pending),
+          ...after(node, value),
         }
       }
       const { index, command } = value.request
@@ -466,14 +493,7 @@ export const make = <Model, Message, Input = void>(
         ...hop,
         kind: 'Answer',
         label: `${command.name} #${index + 1} ${label}`.trimEnd(),
-        ...after(
-          node,
-          value.message,
-          Array.filter(
-            node.pending,
-            (_command, position) => position !== index,
-          ),
-        ),
+        ...after(node, value),
       }
     }
     const arrival = create()
@@ -504,11 +524,9 @@ export const make = <Model, Message, Input = void>(
               interactions:
                 environment.inputs === undefined
                   ? {}
-                  : Object.fromEntries(
-                      Array.map(
-                        inspection(node).interactions,
-                        ({ key, message }) => [key, message],
-                      ),
+                  : Record.fromIterableWith(
+                      inspection(node).interactions,
+                      ({ key, message }) => [key, message],
                     ),
             }),
           )
@@ -553,13 +571,7 @@ export const make = <Model, Message, Input = void>(
     override: Limits = {},
   ): ReadonlyArray<Step> => {
     const node = nodeOf(id)
-    const bound = {
-      states: limit(override.states ?? limits.states, 'State limit'),
-      transitions: limit(
-        override.transitions ?? limits.transitions,
-        'Transition limit',
-      ),
-    }
+    const bound = limitsOf(override, limits)
     const admitted = new Set([id])
     const result: Array<Step> = []
     if (bound.states === 0) {
@@ -594,13 +606,7 @@ export const make = <Model, Message, Input = void>(
     override: Limits = {},
   ): SearchResult => {
     const depth = limit(requestedDepth, 'Depth')
-    const bound = {
-      states: limit(override.states ?? limits.states, 'State limit'),
-      transitions: limit(
-        override.transitions ?? limits.transitions,
-        'Transition limit',
-      ),
-    }
+    const bound = limitsOf(override, limits)
     const cacheKey = `${search} ${depth} ${bound.states} ${bound.transitions}`
     const known = results.get(cacheKey)
     if (known?.revision === revision.value) {
@@ -908,7 +914,7 @@ export const make = <Model, Message, Input = void>(
         decisions: [],
         maybeMessage: Option.some(encodeMessage(message)),
         label: tagOf(message),
-        ...after(node, message, node.pending),
+        ...after(node, send(message)),
       }).to,
     )
   }
@@ -1040,7 +1046,7 @@ export const make = <Model, Message, Input = void>(
       const key =
         environment.inputs === undefined
           ? identity.of(node.model)
-          : canonical(inspection(node).screen)
+          : screens.of(inspection(node).screen)
       const known = grouped.get(key)
       if (known !== undefined) {
         known.states.push(id)
@@ -1082,15 +1088,7 @@ export const make = <Model, Message, Input = void>(
     interact,
     observe: id => {
       const node = nodeOf(id)
-      const inspected = inspection(node)
-      return {
-        screen: inspected.screen,
-        actions: Array.map(inspected.interactions, ({ key, label }) => ({
-          key,
-          label,
-        })),
-        pending: describeCommands(node.pending),
-      }
+      return observationOf(inspection(node), node.pending)
     },
     trace: id => nodeOf(id).trace,
     address,

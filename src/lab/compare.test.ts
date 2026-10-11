@@ -434,8 +434,8 @@ test('initialization is depth zero and a depth-limited pair remains unfinished',
   expect(result.counters).toMatchObject({ starts: 1, transitions: 1, pairs: 1 })
   expect(result.unfinishedWork[0]).toMatchObject({
     depth: 0,
-    before: 'unstarted',
-    after: 'unstarted',
+    before: 'unseen',
+    after: 'unseen',
   })
   result.resume({ depth: 2, states: 10, transitions: 100 })
   expect(result.status).toBe('complete')

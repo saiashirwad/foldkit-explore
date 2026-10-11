@@ -3,8 +3,6 @@ import { Array } from 'effect'
 import { canonical } from './canonical'
 import type { ActionDescription, Screen } from './interactions'
 
-export type { ActionDescription, Screen } from './interactions'
-
 export type CommandDescription = Readonly<{
   name: string
   args: unknown
@@ -30,3 +28,18 @@ export const describeCommands = (
     name: command.name,
     args: command.args ?? {},
   }))
+
+export const observationOf = (
+  inspected: Readonly<{
+    screen: Screen
+    interactions: ReadonlyArray<ActionDescription>
+  }>,
+  pending: ReadonlyArray<DescribedCommand>,
+): Observation => ({
+  screen: inspected.screen,
+  actions: Array.map(inspected.interactions, ({ key, label }) => ({
+    key,
+    label,
+  })),
+  pending: describeCommands(pending),
+})

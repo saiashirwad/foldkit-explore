@@ -918,8 +918,9 @@ export const makeLab = (
     atlas: Atlas,
     cards: ReadonlyArray<Card>,
     h: HtmlBuilder<Message>,
-  ): Html =>
-    h.header(
+  ): Html => {
+    const reached = atlas.reach(model.depth, model.search)
+    return h.header(
       [h.Class('lab-header')],
       [
         modeView(model, h),
@@ -936,7 +937,7 @@ export const makeLab = (
             h.span(
               [h.Class('lab-count')],
               [
-                `${cards.length} groups · ${atlas.reach(model.depth, model.search).states.length} states · ${atlas.reach(model.depth, model.search).status === 'complete' ? 'complete' : `incomplete · ${atlas.reach(model.depth, model.search).status}`}`,
+                `${cards.length} groups · ${reached.states.length} states · ${reached.status === 'complete' ? 'complete' : `incomplete · ${reached.status}`}`,
               ],
             ),
             searchView(model, h),
@@ -949,6 +950,7 @@ export const makeLab = (
         ),
       ],
     )
+  }
 
   const view = (model: Model, h: HtmlBuilder<Message>): Document => {
     if (model.mode === 'Compare') {

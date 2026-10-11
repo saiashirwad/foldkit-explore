@@ -366,8 +366,9 @@ const inspectorView = (
       ? example.trace.length - 1
       : Math.min(model.step, example.trace.length - 1)
   const step: ComparisonStep | undefined = example.trace[index]
+  const examples = new Set(Array.map(finding.examples, item => item.id))
   const failures = comparison.propertyFailures.filter(failure =>
-    finding.examples.some(item => item.id === failure.example.id),
+    examples.has(failure.example.id),
   )
   return h.aside(
     [
@@ -792,10 +793,7 @@ export const makeReview = (cases: ReadonlyArray<ComparisonCase>) => {
               h.div(
                 [h.Class('comparison-coverage'), h.Role('status')],
                 [
-                  h.strong(
-                    [],
-                    [`${comparison.beforeName} → ${comparison.afterName}. `],
-                  ),
+                  h.strong([], [`${comparison.name}. `]),
                   comparison.status === 'complete'
                     ? 'Complete within the declared environment.'
                     : `Search stopped at the ${comparison.status.replace('-limit', '')} limit. Unfinished alternatives remain unknown.`,

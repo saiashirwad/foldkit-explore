@@ -33,7 +33,7 @@ export type Outcome<Output> = Readonly<{
   value: Output
 }>
 
-const replay = <Output>(
+export const replay = <Output>(
   choices: () => Choices<Output>,
   decisions: ReadonlyArray<Decision>,
 ) => {

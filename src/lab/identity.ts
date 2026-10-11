@@ -12,7 +12,7 @@ type Entries = ReadonlyArray<readonly [string, unknown]>
 const isReference = (value: unknown): value is object =>
   Predicate.isObject(value) || Array.isArray(value)
 
-const isStructural = (value: object): boolean => {
+export const isStructural = (value: object): boolean => {
   const prototype = Object.getPrototypeOf(value)
   return (
     Array.isArray(value) || prototype === Object.prototype || prototype === null
