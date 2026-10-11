@@ -1,15 +1,19 @@
-import { modifyFields } from 'foldkit/struct'
-
 import {
+  type Environment,
   type NextState,
-  type Setup,
   type Transition,
   answer,
   pendingRequests,
   send,
 } from '../lab/atlas'
 import { type Choices, fixture } from '../lab/fixture'
-import { CheckUsername, CreateAccount, Message, type Model, init } from './main'
+import {
+  CheckUsername,
+  CreateAccount,
+  Message,
+  type Model,
+  type Plan,
+} from './main'
 
 function* next(state: NextState<Model, Message>): Choices<Transition<Message>> {
   const kind = yield* fixture('next', {
@@ -49,18 +53,18 @@ function* next(state: NextState<Model, Message>): Choices<Transition<Message>> {
 export const longUsername =
   'averylongunbrokenusernameforcheckinghowaccountdetailswraponnarrowdisplays'
 
-export function* SignupLongContentCases(): Choices<Setup<Model, Message>> {
-  const setup = yield* SignupCases()
-  return modifyFields(setup, {
-    inputs: () => [{ label: 'Username', values: [longUsername] }],
-  })
+export function* SignupStarts(): Choices<Plan> {
+  return yield* fixture('arrivedFrom', { home: 'Free', pricing: 'Pro' })
 }
 
-export function* SignupCases(): Choices<Setup<Model, Message>> {
-  const plan = yield* fixture('arrivedFrom', { home: 'Free', pricing: 'Pro' })
-  return {
-    ...init(plan),
-    inputs: [{ label: 'Username', values: ['', 'ada', 'grace'] }],
-    next,
-  }
+export const signupEnvironment: Environment<Model, Message, Plan> = {
+  starts: SignupStarts,
+  inputs: [{ label: 'Username', values: ['', 'ada', 'grace'] }],
+  next,
+}
+
+export const signupLongContentEnvironment: Environment<Model, Message, Plan> = {
+  starts: SignupStarts,
+  inputs: [{ label: 'Username', values: [longUsername] }],
+  next,
 }

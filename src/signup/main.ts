@@ -168,7 +168,7 @@ export const update = (model: Model, message: Message) =>
 
 // VIEW
 
-const primaryButton =
+export const primaryButton =
   'h-9 rounded-lg bg-violet-600 px-4 text-sm font-medium text-white shadow-sm transition hover:bg-violet-700 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none'
 
 const secondaryButton =
@@ -326,7 +326,7 @@ const profileView = (model: Model, h: HtmlBuilder<Message>): Html =>
     ],
   )
 
-const summaryView = (model: Model, h: HtmlBuilder<Message>): Html =>
+export const summaryView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.dl(
     [
       h.Class(
@@ -348,7 +348,7 @@ const summaryView = (model: Model, h: HtmlBuilder<Message>): Html =>
     ],
   )
 
-const confirmView = (model: Model, h: HtmlBuilder<Message>): Html =>
+export const confirmView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.form(
     [h.Class('flex flex-col gap-3'), h.OnSubmit(Message.SubmittedSignup())],
     [
@@ -363,7 +363,7 @@ const confirmView = (model: Model, h: HtmlBuilder<Message>): Html =>
     ],
   )
 
-const creatingView = (model: Model, h: HtmlBuilder<Message>): Html =>
+export const creatingView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.div(
     [h.Class('flex flex-col gap-3')],
     [
@@ -418,7 +418,12 @@ const failedView = (model: Model, h: HtmlBuilder<Message>): Html =>
     ],
   )
 
-export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
+export const frameView = (
+  model: Model,
+  title: string,
+  content: Html,
+  h: HtmlBuilder<Message>,
+): Html =>
   h.section(
     [h.Class('flex w-full flex-col gap-4 bg-white p-5')],
     [
@@ -428,16 +433,24 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
             'text-[11px] font-medium tracking-wider text-slate-400 uppercase',
           ),
         ],
-        ['Sign up'],
+        [title],
       ),
       progressView(model.step, h),
-      Step.match(model.step, {
-        Account: () => accountView(model, h),
-        Profile: () => profileView(model, h),
-        Confirm: () => confirmView(model, h),
-        Creating: () => creatingView(model, h),
-        Created: ({ accountId }) => createdView(model, accountId, h),
-        Failed: () => failedView(model, h),
-      }),
+      content,
     ],
+  )
+
+export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
+  frameView(
+    model,
+    'Sign up',
+    Step.match(model.step, {
+      Account: () => accountView(model, h),
+      Profile: () => profileView(model, h),
+      Confirm: () => confirmView(model, h),
+      Creating: () => creatingView(model, h),
+      Created: ({ accountId }) => createdView(model, accountId, h),
+      Failed: () => failedView(model, h),
+    }),
+    h,
   )

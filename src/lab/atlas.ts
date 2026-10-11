@@ -3,28 +3,41 @@ import type { Update } from 'foldkit'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 import { defineView } from 'foldkit/submodel'
 
-import { type Choices, Decision, outcomes } from './fixture'
+import { canonical } from './canonical'
+import { type Choices, Decision, type Outcome, outcomes } from './fixture'
 import { makeIdentity } from './identity'
-import { type InputDomain, type Interaction, inspect } from './interactions'
+import { type InputDomain, inspect } from './interactions'
+import { type Observation, describeCommands } from './observation'
 
 // PROGRAM
-
-export type Setup<Model, Message> = Readonly<{
-  model: Model
-  commands?: Update.Commands<Message>
-  next?: (state: NextState<Model, Message>) => Choices<Transition<Message>>
-  inputs?: ReadonlyArray<InputDomain>
-}>
 
 export type State<Model, Message> = Readonly<{
   model: Model
   pending: Update.Commands<Message>
 }>
 
-export type NextState<Model, Message> = State<Model, Message> &
+export type NextState<Model, Message, Input = unknown> = State<Model, Message> &
   Readonly<{
+    input: Input
     interactions: Readonly<Record<string, Message>>
   }>
+
+export type Program<Model, Message, Input = void> = Readonly<{
+  name: string
+  Model: Schema.Codec<Model, unknown>
+  Message: Schema.Codec<Message, unknown>
+  start: (input: Input) => Update.Return<Model, Message>
+  update: (model: Model, message: Message) => Update.Return<Model, Message>
+  view: (model: Model, h: HtmlBuilder<Message>) => Html
+}>
+
+export type Environment<Model, Message, Input = void> = Readonly<{
+  starts: () => Choices<Input>
+  inputs?: ReadonlyArray<InputDomain>
+  next?: (
+    state: NextState<Model, Message, Input>,
+  ) => Choices<Transition<Message>>
+}>
 
 type RequestCommand = Readonly<{
   name: string
@@ -75,19 +88,17 @@ export type Property<Model, Message> = Readonly<{
   ) => boolean
 }>
 
-// NOTE: Every search stops at the same depth (trace length) and budget; they
-// differ in which states they reach first and, past the budget, at all.
 export const Search = Schema.Literals(['breadth', 'depth', 'random'])
 export type Search = typeof Search.Type
 
-export type Program<Model, Message> = Readonly<{
-  name: string
+export type Limits = Readonly<{ states?: number; transitions?: number }>
+export type ExplorationLimits = Readonly<{
+  states: number
+  transitions: number
+}>
+export type Options<Model, Message> = Readonly<{
   properties?: ReadonlyArray<Property<Model, Message>>
-  Model: Schema.Codec<Model, unknown>
-  Message: Schema.Codec<Message, unknown>
-  update: (model: Model, message: Message) => Update.Return<Model, Message>
-  view: (model: Model, h: HtmlBuilder<Message>) => Html
-  cases: () => Choices<Setup<Model, Message>>
+  limits?: Limits
 }>
 
 // ADDRESS
@@ -117,19 +128,29 @@ const isSameHop = (left: Hop, right: Hop): boolean =>
 // ATLAS
 
 export type Step = Hop & Readonly<{ label: string; to: string }>
+export type ReachStatus =
+  | 'complete'
+  | 'depth-limit'
+  | 'state-limit'
+  | 'transition-limit'
+export type SuccessorStatus = 'unseen' | 'partial' | 'complete'
 
 export type Reach = Readonly<{
   states: ReadonlyArray<string>
-  isComplete: boolean
+  status: ReachStatus
+  counters: Readonly<{ states: number; transitions: number; starts: number }>
+  unfinishedWork: Readonly<{
+    starts: boolean
+    states: number
+    transitions: number
+  }>
 }>
 
 export type PendingCommand = Readonly<{ name: string; args: string }>
-
 export type FixtureOptions = Readonly<{
   name: string
   options: ReadonlyArray<string>
 }>
-
 export type Violation = Readonly<{
   property: string
   trace: ReadonlyArray<Step>
@@ -139,14 +160,17 @@ export type Group = Readonly<{ home: string; states: ReadonlyArray<string> }>
 
 export type Atlas = Readonly<{
   name: string
-  budget: number
+  limits: ExplorationLimits
   propertyNames: ReadonlyArray<string>
-  check: (depth: number) => ReadonlyArray<Violation>
+  check: (depth: number, limits?: Limits) => ReadonlyArray<Violation>
   groups: (states: ReadonlyArray<string>) => ReadonlyArray<Group>
   grouping: string
-  reach: (depth: number, search?: Search) => Reach
-  successors: (state: string) => ReadonlyArray<Step>
-  send: (state: string, message: unknown) => Option.Option<string>
+  reach: (depth: number, search?: Search, limits?: Limits) => Reach
+  successors: (state: string, limits?: Limits) => ReadonlyArray<Step>
+  knownSuccessors: (state: string) => ReadonlyArray<Step>
+  successorStatus: (state: string) => SuccessorStatus
+  interact: (state: string, message: unknown) => Option.Option<string>
+  observe: (state: string) => Observation
   trace: (state: string) => ReadonlyArray<Step>
   address: (state: string) => Address
   key: (state: string) => string
@@ -163,22 +187,44 @@ export type Atlas = Readonly<{
   nodes: () => number
 }>
 
-type Node<Model, Message> = Readonly<{
-  id: string
-  model: Model
-  pending: Update.Commands<Message>
-  setup: Setup<Model, Message>
-  trace: ReadonlyArray<Step>
-}>
+type Node<Model, Message, Input> = State<Model, Message> &
+  Readonly<{
+    id: string
+    input: Input
+    trace: ReadonlyArray<Step>
+  }>
 
-type Arrival<Model, Message> = Hop &
+type Arrival<Model, Message, Input> = Hop &
+  State<Model, Message> &
   Readonly<{
     label: string
-    maybeFrom: Option.Option<Node<Model, Message>>
-    setup: Setup<Model, Message>
-    model: Model
-    pending: Update.Commands<Message>
+    maybeFrom: Option.Option<Node<Model, Message, Input>>
+    input: Input
+    maybeMessageValue: Option.Option<Message>
   }>
+
+type Source<Value> = {
+  iterator: Iterator<Outcome<Value>>
+  values: Array<Outcome<Value>>
+  done: boolean
+}
+
+type Read<Value> =
+  | Readonly<{ kind: 'value'; outcome: Outcome<Value> }>
+  | Readonly<{ kind: 'done' }>
+  | Readonly<{ kind: 'limit' }>
+
+type SearchResult = Readonly<{
+  reach: Reach
+  paths: ReadonlyMap<string, ReadonlyArray<Step>>
+  edges: ReadonlyMap<string, ReadonlyArray<Step>>
+}>
+
+const source = <Value>(choices: () => Choices<Value>): Source<Value> => ({
+  iterator: outcomes(choices),
+  values: [],
+  done: false,
+})
 
 const labelOf = (decisions: ReadonlyArray<Decision>) =>
   Array.join(
@@ -193,319 +239,665 @@ const tagOf = (message: unknown): string =>
 
 const WALKS = 32
 
-// NOTE: mulberry32, a small seeded generator, so random walks repeat exactly.
+// NOTE: mulberry32 gives each walk a repeatable seed.
 const random = (seed: number) => {
-  let state = seed
+  const state = { value: seed }
   return (): number => {
-    state = (state + 0x6d2b79f5) | 0
-    let mixed = Math.imul(state ^ (state >>> 15), 1 | state)
-    mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed
+    state.value = (state.value + 0x6d2b79f5) | 0
+    const first = Math.imul(state.value ^ (state.value >>> 15), 1 | state.value)
+    const mixed = (first + Math.imul(first ^ (first >>> 7), 61 | first)) ^ first
     return ((mixed ^ (mixed >>> 14)) >>> 0) / 4_294_967_296
   }
 }
 
-// NOTE: An atlas memoizes its Program's state graph as it is explored, so its
-// caches only grow. Ids like S4 follow discovery order within one session;
-// addresses name the same states across sessions.
-export const make = <Model, Message>(
-  program: Program<Model, Message>,
-  budget = 5_000,
+const limit = (value: number, name: string): number => {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative safe integer.`)
+  }
+  return value
+}
+
+// NOTE: Sources retain their iterator and every yielded alternative. A stop
+// before admission therefore resumes the same alternative without replaying
+// start or update. Transition work includes starts, even when states merge.
+export const make = <Model, Message, Input = void>(
+  program: Program<Model, Message, Input>,
+  environment: Environment<Model, Message, Input>,
+  options: Options<Model, Message> = {},
 ): Atlas => {
+  const limits: ExplorationLimits = {
+    states: limit(options.limits?.states ?? 5_000, 'State limit'),
+    transitions: limit(
+      options.limits?.transitions ?? 50_000,
+      'Transition limit',
+    ),
+  }
   const identity = makeIdentity()
+  const nodes = new Map<string, Node<Model, Message, Input>>()
+  const idOf = new Map<unknown, string>()
+  const arrivals = new WeakMap<object, Arrival<Model, Message, Input>>()
+  const arrivalKeys = new WeakMap<object, unknown>()
+  const steps = new WeakMap<object, Step>()
+  const messages = new WeakMap<Step, Readonly<{ message: Message }>>()
+  const sources = new Map<string, Source<Transition<Message>>>()
   const inspections = new Map<
     unknown,
     ReturnType<typeof inspect<Model, Message>>
   >()
-  const messages = new WeakMap<Step, Message>()
-  const inspection = (node: Node<Model, Message>) => {
-    const key = identity.of([node.model, node.setup.inputs])
-    const known = inspections.get(key)
-    if (known !== undefined) {
-      return known
-    }
-    const result = inspect(program.view, node.model, node.setup.inputs ?? [])
-    inspections.set(key, result)
-    return result
-  }
-  const nodes = new Map<string, Node<Model, Message>>()
-  const idOf = new Map<unknown, string>()
-  const successorsOf = new Map<string, ReadonlyArray<Step>>()
-  const keyOf = new Map<string, string>()
-  const layers: Array<ReadonlyArray<string>> = []
-  const placed = new Set<string>()
+  const startSource = source(environment.starts)
   const fixtureOptions = new Map<string, ReadonlyArray<string>>()
+  const keyOf = new Map<string, string>()
+  const revision = { value: 0 }
+  const results = new Map<
+    string,
+    Readonly<{ revision: number; result: SearchResult }>
+  >()
   const isMessage = Schema.is(program.Message)
   const encodeMessage = Schema.encodeSync(program.Message)
   const decodeMessage = Schema.decodeUnknownOption(program.Message)
-  const encodeAddress = Schema.encodeSync(Address)
   const encodeModel = Schema.encodeSync(program.Model)
+  const encodeAddress = Schema.encodeSync(Address)
   const view = defineView<Model, Message>(program.view)
 
-  const nodeOf = (id: string): Node<Model, Message> =>
+  const nodeOf = (id: string): Node<Model, Message, Input> =>
     pipe(
       Option.fromNullishOr(nodes.get(id)),
       Option.getOrThrowWith(() => new Error(`${program.name} has no ${id}.`)),
     )
 
+  const inspection = (node: Node<Model, Message, Input>) => {
+    const key = identity.of(node.model)
+    const known = inspections.get(key)
+    if (known !== undefined) {
+      return known
+    }
+    const result = inspect(
+      program.view,
+      node.model,
+      environment.inputs ?? [],
+      encodeMessage,
+    )
+    inspections.set(key, result)
+    return result
+  }
+
   const learn = (decisions: ReadonlyArray<Decision>) =>
     Array.forEach(decisions, ({ fixture, option }) => {
-      const options = fixtureOptions.get(fixture) ?? []
-      if (!Array.contains(options, option)) {
-        fixtureOptions.set(fixture, Array.append(options, option))
+      const known = fixtureOptions.get(fixture) ?? []
+      if (!Array.contains(known, option)) {
+        fixtureOptions.set(fixture, Array.append(known, option))
       }
     })
 
-  const arrive = (arrival: Arrival<Model, Message>): Step => {
+  const arrivalKey = (arrival: Arrival<Model, Message, Input>): unknown => {
+    const known = arrivalKeys.get(arrival)
+    if (known !== undefined) {
+      return known
+    }
     const key = identity.of([
-      arrival.setup.next,
-      arrival.setup.inputs,
+      arrival.input,
       arrival.model,
       Array.map(arrival.pending, command => [command.name, command.args ?? {}]),
     ])
-    const stepTo = (to: string): Step => ({
+    arrivalKeys.set(arrival, key)
+    return key
+  }
+
+  const arrive = (arrival: Arrival<Model, Message, Input>): Step => {
+    const knownStep = steps.get(arrival)
+    if (knownStep !== undefined) {
+      return knownStep
+    }
+    const key = arrivalKey(arrival)
+    const known = idOf.get(key)
+    const step: Step = {
       kind: arrival.kind,
       decisions: arrival.decisions,
       maybeMessage: arrival.maybeMessage,
       label: arrival.label,
-      to,
-    })
-    const known = idOf.get(key)
-    if (known !== undefined) {
-      return stepTo(known)
+      to: known ?? `S${nodes.size + 1}`,
     }
-    const step = stepTo(`S${nodes.size + 1}`)
-    idOf.set(key, step.to)
-    nodes.set(step.to, {
-      id: step.to,
-      model: arrival.model,
-      pending: arrival.pending,
-      setup: arrival.setup,
-      trace: Array.append(
-        Option.match(arrival.maybeFrom, {
-          onNone: () => [],
-          onSome: from => from.trace,
-        }),
-        step,
-      ),
+    if (known === undefined) {
+      idOf.set(key, step.to)
+      nodes.set(step.to, {
+        id: step.to,
+        input: arrival.input,
+        model: arrival.model,
+        pending: arrival.pending,
+        trace: Array.append(
+          Option.match(arrival.maybeFrom, {
+            onNone: () => [],
+            onSome: from => from.trace,
+          }),
+          step,
+        ),
+      })
+      revision.value += 1
+    }
+    steps.set(arrival, step)
+    Option.match(arrival.maybeMessageValue, {
+      onNone: () => undefined,
+      onSome: message => messages.set(step, { message }),
     })
     learn(arrival.decisions)
     return step
   }
 
+  const startArrival = (
+    outcome: Outcome<Input>,
+  ): Arrival<Model, Message, Input> => {
+    const known = arrivals.get(outcome)
+    if (known !== undefined) {
+      return known
+    }
+    const started = program.start(outcome.value)
+    const arrival: Arrival<Model, Message, Input> = {
+      kind: 'Start',
+      decisions: outcome.decisions,
+      maybeMessage: Option.none(),
+      label: Array.isReadonlyArrayEmpty(outcome.decisions)
+        ? 'start'
+        : labelOf(outcome.decisions),
+      maybeFrom: Option.none(),
+      input: outcome.value,
+      model: started.model,
+      pending: started.commands ?? [],
+      maybeMessageValue: Option.none(),
+    }
+    arrivals.set(outcome, arrival)
+    return arrival
+  }
+
   const after = (
-    node: Node<Model, Message>,
+    node: Node<Model, Message, Input>,
     message: Message,
     remaining: Update.Commands<Message>,
   ) => {
     const updated = program.update(node.model, message)
     return {
       maybeFrom: Option.some(node),
-      setup: node.setup,
+      input: node.input,
       model: updated.model,
       pending: Array.appendAll(remaining, updated.commands ?? []),
+      maybeMessageValue: Option.some(message),
     }
   }
 
-  const transition = (
-    node: Node<Model, Message>,
-    message: Message,
-    remaining: Update.Commands<Message>,
-    hop: Hop & Readonly<{ label: string }>,
-  ): Step => {
-    const step = arrive({ ...hop, ...after(node, message, remaining) })
-    messages.set(step, message)
-    return step
+  const nextArrival = (
+    node: Node<Model, Message, Input>,
+    outcome: Outcome<Transition<Message>>,
+  ): Arrival<Model, Message, Input> => {
+    const known = arrivals.get(outcome)
+    if (known !== undefined) {
+      return known
+    }
+    const { decisions, value } = outcome
+    if (!isMessage(value.message)) {
+      throw new Error(`${program.name}: next returned an invalid Message.`)
+    }
+    const hop = { decisions, maybeMessage: Option.none() }
+    const interactions =
+      environment.inputs === undefined ? [] : inspection(node).interactions
+    const label = Array.join(
+      Array.map(
+        decisions,
+        decision =>
+          interactions.find(interaction => interaction.key === decision.option)
+            ?.label ?? decision.option,
+      ),
+      ' ',
+    )
+    const create = (): Arrival<Model, Message, Input> => {
+      if (value.kind === 'Move') {
+        return {
+          ...hop,
+          kind: 'Move',
+          label,
+          ...after(node, value.message, node.pending),
+        }
+      }
+      const { index, command } = value.request
+      if (node.pending[index] !== command) {
+        throw new Error(
+          `${program.name}: answer must select a pending Command from this state.`,
+        )
+      }
+      return {
+        ...hop,
+        kind: 'Answer',
+        label: `${command.name} #${index + 1} ${label}`.trimEnd(),
+        ...after(
+          node,
+          value.message,
+          Array.filter(
+            node.pending,
+            (_command, position) => position !== index,
+          ),
+        ),
+      }
+    }
+    const arrival = create()
+    arrivals.set(outcome, arrival)
+    return arrival
   }
 
-  const successors = (id: string): ReadonlyArray<Step> => {
-    const known = successorsOf.get(id)
+  const sourceOf = (id: string): Source<Transition<Message>> => {
+    const known = sources.get(id)
     if (known !== undefined) {
       return known
     }
     const node = nodeOf(id)
-    const next = node.setup.next
-    const interactions =
-      node.setup.inputs === undefined
-        ? {}
-        : Object.fromEntries(
-            Array.map(
-              inspection(node).interactions,
-              ({ label, message }: Interaction<Message>, index) => [
-                `${index}: ${label}`,
-                message,
-              ],
-            ),
-          )
-    const steps =
+    const next = environment.next
+    const current: Source<Transition<Message>> =
       next === undefined
-        ? []
-        : Array.map(
-            outcomes(() =>
-              next({ model: node.model, pending: node.pending, interactions }),
-            ),
-            ({ decisions, value }) => {
-              if (!isMessage(value.message)) {
-                throw new Error(
-                  `${program.name}: next returned an invalid Message.`,
-                )
-              }
-              if (value.kind === 'Move') {
-                return transition(node, value.message, node.pending, {
-                  kind: 'Move',
-                  decisions,
-                  maybeMessage: Option.none(),
-                  label: labelOf(decisions),
-                })
-              }
-              const { index, command } = value.request
-              if (node.pending[index] !== command) {
-                throw new Error(
-                  `${program.name}: answer must select a pending Command from this state.`,
-                )
-              }
-              return transition(
-                node,
-                value.message,
-                Array.filter(
-                  node.pending,
-                  (_command, position) => position !== index,
-                ),
-                {
-                  kind: 'Answer',
-                  decisions,
-                  maybeMessage: Option.none(),
-                  label:
-                    `${command.name} #${index + 1} ${labelOf(decisions)}`.trimEnd(),
-                },
-              )
-            },
+        ? {
+            iterator:
+              Array.empty<Outcome<Transition<Message>>>()[Symbol.iterator](),
+            values: [],
+            done: true,
+          }
+        : source(() =>
+            next({
+              input: node.input,
+              model: node.model,
+              pending: node.pending,
+              interactions:
+                environment.inputs === undefined
+                  ? {}
+                  : Object.fromEntries(
+                      Array.map(
+                        inspection(node).interactions,
+                        ({ key, message }) => [key, message],
+                      ),
+                    ),
+            }),
           )
-    successorsOf.set(id, steps)
-    return steps
+    sources.set(id, current)
+    return current
   }
 
-  const starts = (): ReadonlyArray<string> =>
-    Array.map(
-      outcomes(program.cases),
-      ({ decisions, value }) =>
-        arrive({
-          kind: 'Start',
-          decisions,
-          maybeMessage: Option.none(),
-          label: Array.isReadonlyArrayEmpty(decisions)
-            ? 'start'
-            : labelOf(decisions),
-          maybeFrom: Option.none(),
-          setup: value,
-          model: value.model,
-          pending: value.commands ?? [],
-        }).to,
-    )
-
-  const place = (ids: ReadonlyArray<string>): ReadonlyArray<string> => {
-    const fresh = Array.filter(Array.dedupe(ids), id => !placed.has(id))
-    Array.forEach(fresh, id => placed.add(id))
-    return fresh
-  }
-
-  const layerAt = (depth: number): ReadonlyArray<string> => {
-    const known = layers[depth]
+  const pull = <Value>(
+    current: Source<Value>,
+    index: number,
+  ): Option.Option<Outcome<Value>> => {
+    const known = current.values[index]
     if (known !== undefined) {
-      return known
+      return Option.some(known)
     }
-    const layer =
-      depth === 0
-        ? place(starts())
-        : placed.size >= budget
-          ? []
-          : place(
-              Array.flatMap(layerAt(depth - 1), id =>
-                Array.map(successors(id), step => step.to),
-              ),
-            )
-    layers[depth] = layer
-    return layer
+    if (current.done) {
+      return Option.none()
+    }
+    const item = current.iterator.next()
+    revision.value += 1
+    if (item.done) {
+      current.done = true
+      return Option.none()
+    }
+    current.values.push(item.value)
+    return Option.some(item.value)
   }
 
-  const breadthFirst = (depth: number): Reach => ({
-    states: Array.flatMap(Array.range(0, depth), layerAt),
-    isComplete:
-      Array.isReadonlyArrayEmpty(layerAt(depth + 1)) && placed.size < budget,
-  })
-
-  // NOTE: A state found again on a shorter path is revisited, so depth-first
-  // reaches the same states as breadth-first at the same depth unless the
-  // budget runs out first.
-  const depthFirst = (depth: number): ReadonlyArray<string> => {
-    const shallowest = new Map<string, number>()
-    const order: Array<string> = []
-    const visit = (id: string, distance: number): void => {
-      const known = shallowest.get(id)
-      if (known !== undefined && known <= distance) {
-        return
-      }
-      if (known === undefined) {
-        if (order.length >= budget) {
-          return
-        }
-        order.push(id)
-      }
-      shallowest.set(id, distance)
-      if (distance < depth) {
-        Array.forEach(successors(id), step => visit(step.to, distance + 1))
-      }
-    }
-    Array.forEach(layerAt(0), id => visit(id, 0))
-    return order
-  }
-
-  // NOTE: Each walk has its own seed, so a deeper search extends the same
-  // walks instead of drawing new ones.
-  const randomWalks = (depth: number): ReadonlyArray<string> =>
-    Array.dedupe(
-      Array.flatMap(Array.range(1, WALKS), seed => {
-        const next = random(seed)
-        const pick = <A>(items: ReadonlyArray<A>): Option.Option<A> =>
-          Array.get(items, Math.floor(next() * items.length))
-        const walk: Array<string> = []
-        let maybeAt = pick(layerAt(0))
-        while (Option.isSome(maybeAt) && walk.length <= depth) {
-          walk.push(maybeAt.value)
-          maybeAt = Option.map(pick(successors(maybeAt.value)), step => step.to)
-        }
-        return walk
-      }),
-    )
-
-  const reaches = new Map<string, Reach>()
-  const reach = (depth: number, search: Search = 'breadth'): Reach => {
-    if (search === 'breadth') {
-      return breadthFirst(depth)
-    }
-    const cacheKey = `${search} ${depth}`
-    const known = reaches.get(cacheKey)
-    if (known !== undefined) {
-      return known
-    }
-    const states = Array.take(
-      search === 'depth' ? depthFirst(depth) : randomWalks(depth),
-      budget,
-    )
-    const reached = new Set(states)
-    const result = {
-      states,
-      isComplete:
-        reached.size < budget &&
-        Array.every(layerAt(0), id => reached.has(id)) &&
-        Array.every(states, id =>
-          Array.every(successors(id), step => reached.has(step.to)),
+  const knownSuccessors = (id: string): ReadonlyArray<Step> => {
+    nodeOf(id)
+    return Array.getSomes(
+      Array.map(sources.get(id)?.values ?? [], outcome =>
+        Option.flatMap(Option.fromNullishOr(arrivals.get(outcome)), arrival =>
+          Option.fromNullishOr(steps.get(arrival)),
         ),
+      ),
+    )
+  }
+
+  const successors = (
+    id: string,
+    override: Limits = {},
+  ): ReadonlyArray<Step> => {
+    const node = nodeOf(id)
+    const bound = {
+      states: limit(override.states ?? limits.states, 'State limit'),
+      transitions: limit(
+        override.transitions ?? limits.transitions,
+        'Transition limit',
+      ),
     }
-    reaches.set(cacheKey, result)
+    const admitted = new Set([id])
+    const result: Array<Step> = []
+    if (bound.states === 0) {
+      return result
+    }
+    const current = sourceOf(id)
+    const cursor = { index: 0 }
+    while (cursor.index < bound.transitions) {
+      const maybeOutcome = pull(current, cursor.index)
+      if (Option.isNone(maybeOutcome)) {
+        return result
+      }
+      const arrival = nextArrival(node, maybeOutcome.value)
+      const known = idOf.get(arrivalKey(arrival))
+      if (
+        (known === undefined || !admitted.has(known)) &&
+        admitted.size >= bound.states
+      ) {
+        return result
+      }
+      const step = arrive(arrival)
+      admitted.add(step.to)
+      result.push(step)
+      cursor.index += 1
+    }
     return result
   }
 
-  const send = (id: string, message: unknown): Option.Option<string> => {
+  const run = (
+    requestedDepth: number,
+    search: Search = 'breadth',
+    override: Limits = {},
+  ): SearchResult => {
+    const depth = limit(requestedDepth, 'Depth')
+    const bound = {
+      states: limit(override.states ?? limits.states, 'State limit'),
+      transitions: limit(
+        override.transitions ?? limits.transitions,
+        'Transition limit',
+      ),
+    }
+    const cacheKey = `${search} ${depth} ${bound.states} ${bound.transitions}`
+    const known = results.get(cacheKey)
+    if (known?.revision === revision.value) {
+      return known.result
+    }
+    const order: Array<string> = []
+    const distances = new Map<string, number>()
+    const paths = new Map<string, ReadonlyArray<Step>>()
+    const edges = new Map<string, Array<Step>>()
+    const expanded = new Map<string, number>()
+    const frontier = new Set<string>()
+    const deferred = new Set<object>()
+    const charged = new Set<object>()
+    const counters = { states: 0, transitions: 0, starts: 0 }
+    const progress: {
+      stopped: 'state-limit' | 'transition-limit' | undefined
+      startsDone: boolean
+      startIndex: number
+    } = {
+      stopped: undefined,
+      startsDone: false,
+      startIndex: 0,
+    }
+
+    const read = <Value>(
+      current: Source<Value>,
+      index: number,
+      isStart = false,
+    ): Read<Value> => {
+      const known = current.values[index]
+      if (known === undefined && current.done) {
+        return { kind: 'done' }
+      }
+      if (
+        (known === undefined || !charged.has(known)) &&
+        counters.transitions >= bound.transitions
+      ) {
+        progress.stopped = 'transition-limit'
+        return { kind: 'limit' }
+      }
+      const maybeOutcome = pull(current, index)
+      if (Option.isNone(maybeOutcome)) {
+        return { kind: 'done' }
+      }
+      const outcome = maybeOutcome.value
+      if (!charged.has(outcome)) {
+        charged.add(outcome)
+        counters.transitions += 1
+        if (isStart) {
+          counters.starts += 1
+        }
+      }
+      return { kind: 'value', outcome }
+    }
+
+    const admit = (
+      arrival: Arrival<Model, Message, Input>,
+      distance: number,
+    ): Option.Option<Step> => {
+      const knownId = idOf.get(arrivalKey(arrival))
+      const knownDistance =
+        knownId === undefined ? undefined : distances.get(knownId)
+      if (knownDistance === undefined && distance > depth) {
+        deferred.add(arrival)
+        return Option.none()
+      }
+      if (knownDistance === undefined && order.length >= bound.states) {
+        deferred.add(arrival)
+        progress.stopped = 'state-limit'
+        return Option.none()
+      }
+      deferred.delete(arrival)
+      const step = arrive(arrival)
+      if (knownDistance === undefined) {
+        order.push(step.to)
+        counters.states += 1
+      }
+      if (knownDistance === undefined || distance < knownDistance) {
+        distances.set(step.to, distance)
+        const prefix = Option.match(arrival.maybeFrom, {
+          onNone: () => [],
+          onSome: from => paths.get(from.id) ?? [],
+        })
+        paths.set(step.to, Array.append(prefix, step))
+      }
+      return Option.some(step)
+    }
+
+    const record = (id: string, step: Step) => {
+      const known = edges.get(id) ?? []
+      if (!known.includes(step)) {
+        known.push(step)
+        edges.set(id, known)
+      }
+    }
+
+    const startOutcomes: Array<Outcome<Input>> = []
+    while (progress.stopped === undefined && !progress.startsDone) {
+      const item = read(startSource, progress.startIndex, true)
+      if (item.kind === 'done') {
+        progress.startsDone = true
+      } else if (item.kind === 'value') {
+        startOutcomes.push(item.outcome)
+        if (search !== 'random') {
+          admit(startArrival(item.outcome), 0)
+        }
+        progress.startIndex += 1
+      }
+    }
+
+    const expand = (
+      id: string,
+      distance: number,
+      visit: (step: Step) => void,
+    ) => {
+      const current = sourceOf(id)
+      const node = nodeOf(id)
+      const cursor = { index: 0, done: false }
+      frontier.add(id)
+      while (progress.stopped === undefined && !cursor.done) {
+        const item = read(current, cursor.index)
+        if (item.kind === 'done') {
+          expanded.set(id, distance)
+          frontier.delete(id)
+          cursor.done = true
+        } else if (item.kind === 'value') {
+          const maybeStep = admit(nextArrival(node, item.outcome), distance + 1)
+          if (Option.isSome(maybeStep)) {
+            record(id, maybeStep.value)
+            visit(maybeStep.value)
+          } else {
+            cursor.done = true
+          }
+          cursor.index += 1
+        }
+      }
+    }
+
+    if (search === 'breadth') {
+      const cursor = { index: 0 }
+      while (progress.stopped === undefined && cursor.index < order.length) {
+        const id = order[cursor.index]
+        if (id !== undefined) {
+          expand(id, distances.get(id) ?? 0, () => undefined)
+        }
+        cursor.index += 1
+      }
+    } else if (search === 'depth') {
+      const frames: Array<{ id: string; distance: number; index: number }> = []
+      const schedule = (id: string, distance: number) => {
+        if ((expanded.get(id) ?? Infinity) > distance) {
+          expanded.set(id, distance)
+          frontier.add(id)
+          frames.push({ id, distance, index: 0 })
+        }
+      }
+      Array.forEach(Array.reverse(order), id =>
+        frames.push({ id, distance: 0, index: 0 }),
+      )
+      while (progress.stopped === undefined && Array.isArrayNonEmpty(frames)) {
+        const frame = frames.at(-1)
+        if (frame === undefined) {
+          break
+        }
+        frontier.add(frame.id)
+        expanded.set(frame.id, frame.distance)
+        const item = read(sourceOf(frame.id), frame.index)
+        if (item.kind === 'done') {
+          frontier.delete(frame.id)
+          frames.pop()
+        } else if (item.kind === 'value') {
+          frame.index += 1
+          const maybeStep = admit(
+            nextArrival(nodeOf(frame.id), item.outcome),
+            frame.distance + 1,
+          )
+          if (Option.isNone(maybeStep)) {
+            frames.pop()
+          } else {
+            record(frame.id, maybeStep.value)
+            if (frame.distance < depth) {
+              schedule(maybeStep.value.to, frame.distance + 1)
+            }
+          }
+        }
+      }
+    } else {
+      const sampledStarts = new Set<object>()
+      Array.forEach(Array.range(1, WALKS), seed => {
+        if (progress.stopped !== undefined) {
+          return
+        }
+        const next = random(seed)
+        const starting =
+          startOutcomes[Math.floor(next() * startOutcomes.length)]
+        if (starting === undefined) {
+          return
+        }
+        sampledStarts.add(starting)
+        const walk = { at: admit(startArrival(starting), 0), distance: 0 }
+        while (
+          progress.stopped === undefined &&
+          Option.isSome(walk.at) &&
+          walk.distance < depth
+        ) {
+          const id = walk.at.value.to
+          const current = sourceOf(id)
+          const offered: Array<Outcome<Transition<Message>>> = []
+          const cursor = { index: 0, done: false }
+          frontier.add(id)
+          while (progress.stopped === undefined && !cursor.done) {
+            const item = read(current, cursor.index)
+            if (item.kind === 'done') {
+              cursor.done = true
+            } else if (item.kind === 'value') {
+              offered.push(item.outcome)
+              cursor.index += 1
+            }
+          }
+          if (progress.stopped !== undefined) {
+            return
+          }
+          const selected = offered[Math.floor(next() * offered.length)]
+          if (selected === undefined) {
+            frontier.delete(id)
+            expanded.set(id, walk.distance)
+            walk.at = Option.none()
+          } else {
+            walk.at = admit(
+              nextArrival(nodeOf(id), selected),
+              walk.distance + 1,
+            )
+            if (Option.isSome(walk.at)) {
+              record(id, walk.at.value)
+            }
+            walk.distance += 1
+          }
+        }
+      })
+      Array.forEach(order, id => {
+        const current = sources.get(id)
+        if (
+          environment.next === undefined ||
+          (current?.done &&
+            current.values.every(outcome => {
+              const arrival = arrivals.get(outcome)
+              const step =
+                arrival === undefined ? undefined : steps.get(arrival)
+              return step !== undefined && distances.has(step.to)
+            }))
+        ) {
+          expanded.set(id, distances.get(id) ?? 0)
+          frontier.delete(id)
+        } else {
+          frontier.add(id)
+        }
+      })
+      if (sampledStarts.size < startOutcomes.length) {
+        progress.startsDone = false
+      }
+    }
+
+    Array.forEach(order, id => {
+      if (!expanded.has(id)) {
+        frontier.add(id)
+      }
+    })
+    const status: ReachStatus =
+      progress.stopped ??
+      (progress.startsDone && Array.isArrayEmpty(Array.fromIterable(frontier))
+        ? 'complete'
+        : 'depth-limit')
+    const result: SearchResult = {
+      reach: {
+        states: order,
+        status,
+        counters,
+        unfinishedWork: {
+          starts: !progress.startsDone,
+          states: frontier.size,
+          transitions: deferred.size,
+        },
+      },
+      paths,
+      edges,
+    }
+    results.set(cacheKey, { revision: revision.value, result })
+    return result
+  }
+
+  const reach = (
+    depth: number,
+    search: Search = 'breadth',
+    limits?: Limits,
+  ): Reach => run(depth, search, limits).reach
+
+  const interact = (id: string, message: unknown): Option.Option<string> => {
     if (!isMessage(message)) {
       return Option.none()
     }
@@ -538,38 +930,68 @@ export const make = <Model, Message>(
     return encoded
   }
 
+  const resolveNext = (id: string, hop: Hop): Option.Option<string> => {
+    const current = sourceOf(id)
+    const cursor = { index: 0 }
+    while (true) {
+      const maybeOutcome = pull(current, cursor.index)
+      if (Option.isNone(maybeOutcome)) {
+        return Option.none()
+      }
+      if (
+        isSameHop(
+          {
+            ...hop,
+            kind: maybeOutcome.value.value.kind,
+            decisions: maybeOutcome.value.decisions,
+          },
+          hop,
+        )
+      ) {
+        return Option.some(
+          arrive(nextArrival(nodeOf(id), maybeOutcome.value)).to,
+        )
+      }
+      cursor.index += 1
+    }
+  }
+
   const follow = (id: string, hop: Hop): Option.Option<string> =>
     Option.match(hop.maybeMessage, {
-      onNone: () =>
-        Option.map(
-          Array.findFirst(successors(id), step => isSameHop(step, hop)),
-          step => step.to,
-        ),
+      onNone: () => resolveNext(id, hop),
       onSome: encoded =>
-        Option.flatMap(decodeMessage(encoded), message => send(id, message)),
+        Option.flatMap(decodeMessage(encoded), message =>
+          interact(id, message),
+        ),
     })
+
+  const resolveStart = (hop: Hop): Option.Option<string> => {
+    const cursor = { index: 0 }
+    while (true) {
+      const maybeOutcome = pull(startSource, cursor.index)
+      if (Option.isNone(maybeOutcome)) {
+        return Option.none()
+      }
+      const arrival = startArrival(maybeOutcome.value)
+      const step = arrive(arrival)
+      if (isSameHop(step, hop)) {
+        return Option.some(step.to)
+      }
+      cursor.index += 1
+    }
+  }
 
   const resolve = (address: Address): Option.Option<string> =>
     Array.match(address, {
       onEmpty: () => Option.none(),
       onNonEmpty: ([start, ...hops]) =>
-        Array.reduce(
-          hops,
-          Array.findFirst(layerAt(0), id =>
-            Option.exists(Array.head(nodeOf(id).trace), step =>
-              isSameHop(step, start),
-            ),
-          ),
-          (maybeId, hop) => Option.flatMap(maybeId, id => follow(id, hop)),
+        Array.reduce(hops, resolveStart(start), (maybeId, hop) =>
+          Option.flatMap(maybeId, id => follow(id, hop)),
         ),
     })
 
-  const checks = new Map<number, ReadonlyArray<Violation>>()
-  const check = (depth: number): ReadonlyArray<Violation> => {
-    const cached = checks.get(depth)
-    if (cached !== undefined) {
-      return cached
-    }
+  const check = (depth: number, limits?: Limits): ReadonlyArray<Violation> => {
+    const result = run(depth, 'breadth', limits)
     const failures = new Map<string, Violation>()
     const report = (failure: Violation) => {
       const previous = failures.get(failure.property)
@@ -580,47 +1002,35 @@ export const make = <Model, Message>(
         failures.set(failure.property, failure)
       }
     }
-    const paths = new Map<string, ReadonlyArray<Step>>()
-    Array.forEach(layerAt(0), id =>
-      paths.set(id, Array.take(nodeOf(id).trace, 1)),
-    )
-    Array.forEach(Array.range(0, depth), distance => {
-      Array.forEach(layerAt(distance), id => {
-        const node = nodeOf(id)
-        const trace = paths.get(id) ?? []
-        Array.forEach(program.properties ?? [], property => {
-          if (property.state !== undefined && !property.state(node)) {
-            report({ property: property.name, trace, state: id })
-          }
-        })
-        if (distance < depth) {
-          Array.forEach(successors(id), step => {
-            const nextTrace = Array.append(trace, step)
-            if (!paths.has(step.to)) {
-              paths.set(step.to, nextTrace)
-            }
-            const message = messages.get(step)
-            if (message !== undefined) {
-              Array.forEach(program.properties ?? [], property => {
-                if (
-                  property.transition !== undefined &&
-                  !property.transition(node, message, nodeOf(step.to))
-                ) {
-                  report({
-                    property: property.name,
-                    trace: nextTrace,
-                    state: step.to,
-                  })
-                }
-              })
-            }
-          })
+    Array.forEach(result.reach.states, id => {
+      const node = nodeOf(id)
+      const trace = result.paths.get(id) ?? []
+      Array.forEach(options.properties ?? [], property => {
+        if (property.state !== undefined && !property.state(node)) {
+          report({ property: property.name, trace, state: id })
         }
       })
+      if (trace.length <= depth) {
+        Array.forEach(result.edges.get(id) ?? [], step => {
+          const event = messages.get(step)
+          if (event !== undefined) {
+            Array.forEach(options.properties ?? [], property => {
+              if (
+                property.transition !== undefined &&
+                !property.transition(node, event.message, nodeOf(step.to))
+              ) {
+                report({
+                  property: property.name,
+                  trace: Array.append(trace, step),
+                  state: step.to,
+                })
+              }
+            })
+          }
+        })
+      }
     })
-    const result = Array.fromIterable(failures.values())
-    checks.set(depth, result)
-    return result
+    return Array.fromIterable(failures.values())
   }
 
   const groups = (states: ReadonlyArray<string>): ReadonlyArray<Group> => {
@@ -628,9 +1038,9 @@ export const make = <Model, Message>(
     Array.forEach(states, id => {
       const node = nodeOf(id)
       const key =
-        node.setup.inputs === undefined
+        environment.inputs === undefined
           ? identity.of(node.model)
-          : inspection(node).screen
+          : canonical(inspection(node).screen)
       const known = grouped.get(key)
       if (known !== undefined) {
         known.states.push(id)
@@ -643,17 +1053,45 @@ export const make = <Model, Message>(
 
   return {
     name: program.name,
-    budget,
+    limits,
     propertyNames: Array.map(
-      program.properties ?? [],
+      options.properties ?? [],
       property => property.name,
     ),
     check,
     groups,
-    grouping: 'Rendered markup for view-driven cases; equal Models otherwise',
+    grouping:
+      'Rendered markup for view-driven environments; equal Models otherwise',
     reach,
     successors,
-    send,
+    knownSuccessors,
+    successorStatus: id => {
+      nodeOf(id)
+      const current = sources.get(id)
+      return environment.next === undefined ||
+        (current?.done &&
+          current.values.every(outcome => {
+            const arrival = arrivals.get(outcome)
+            return arrival !== undefined && steps.has(arrival)
+          }))
+        ? 'complete'
+        : current === undefined
+          ? 'unseen'
+          : 'partial'
+    },
+    interact,
+    observe: id => {
+      const node = nodeOf(id)
+      const inspected = inspection(node)
+      return {
+        screen: inspected.screen,
+        actions: Array.map(inspected.interactions, ({ key, label }) => ({
+          key,
+          label,
+        })),
+        pending: describeCommands(node.pending),
+      }
+    },
     trace: id => nodeOf(id).trace,
     address,
     key,
@@ -683,7 +1121,7 @@ export const make = <Model, Message>(
 // DESCRIBE
 
 export const describe = (atlas: Atlas, depth: number): string => {
-  const { states, isComplete } = atlas.reach(depth)
+  const reached = atlas.reach(depth)
   const stateView = (id: string) => [
     '',
     `${id}  ${Array.join(
@@ -695,7 +1133,7 @@ export const describe = (atlas: Atlas, depth: number): string => {
       atlas.pending(id),
       ({ name, args }) => `    pending ${name} ${args}`,
     ),
-    ...Array.match(atlas.successors(id), {
+    ...Array.match(atlas.knownSuccessors(id), {
       onEmpty: () => [],
       onNonEmpty: steps => [
         `    ${Array.join(
@@ -707,9 +1145,9 @@ export const describe = (atlas: Atlas, depth: number): string => {
   ]
   return Array.join(
     [
-      `# ${atlas.name} · depth ${depth} · ${states.length} states · ${isComplete ? 'complete' : 'incomplete'}`,
-      `# Transitions: next(state); exploration threshold: ${atlas.budget} states`,
-      ...Array.flatMap(states, stateView),
+      `# ${atlas.name} · depth ${depth} · ${reached.states.length} states · ${reached.status}`,
+      `# Transitions: next(state); limits: ${atlas.limits.states} states, ${atlas.limits.transitions} alternatives (including starts)`,
+      ...Array.flatMap(reached.states, stateView),
       '',
     ],
     '\n',

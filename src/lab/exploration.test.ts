@@ -1,30 +1,29 @@
 import { Array, Option, Schema } from 'effect'
 import { expect, test } from 'vitest'
 
+import { signupProgram } from '../programs'
 import * as Signup from '../signup/main'
 import {
-  SignupCases,
-  SignupLongContentCases,
   longUsername,
+  signupEnvironment,
+  signupLongContentEnvironment,
 } from '../signup/main.cases'
 import { properties } from '../signup/properties'
-import { type Atlas, make, send as move } from './atlas'
+import {
+  type Atlas,
+  type Environment,
+  describe,
+  make,
+  send as move,
+} from './atlas'
 import { fixture } from './fixture'
 
-const signup = (cases = SignupCases) =>
-  make({
-    name: 'Signup',
-    Model: Signup.Model,
-    Message: Signup.Message,
-    update: Signup.update,
-    view: Signup.view,
-    cases,
-    properties,
-  })
+const signup = (environment = signupEnvironment) =>
+  make(signupProgram, environment, { properties })
 const start = (atlas: Atlas) =>
   Option.getOrThrow(Array.head(atlas.reach(0).states))
 const send = (atlas: Atlas, state: string, message: Signup.Message) =>
-  Option.getOrThrow(atlas.send(state, message))
+  Option.getOrThrow(atlas.interact(state, message))
 const answer = (atlas: Atlas, state: string, label: string) =>
   Option.getOrThrow(
     Array.findFirst(atlas.successors(state), step => step.label === label),
@@ -88,50 +87,55 @@ test('screens group different pending queues without merging execution states', 
 test('signup properties hold within depth 8 without claiming complete exploration', () => {
   const atlas = signup()
   expect(atlas.check(8)).toEqual([])
-  expect(atlas.reach(8).isComplete).toBe(false)
+  expect(atlas.reach(8).status).not.toBe('complete')
   expect(atlas.groups(atlas.reach(8).states).length).toBeLessThan(
     atlas.reach(8).states.length,
   )
 })
 
 const counter = () =>
-  make({
-    name: 'Counter',
-    Model: Schema.Number,
-    Message: Schema.Number,
-    update: (_model, message) => ({ model: message }),
-    view: (_model, h) => h.div([]),
-    *cases() {
-      return {
-        model: 0,
-        *next({ model }: { model: number }) {
-          return move(
-            yield* fixture(
-              'move',
-              model === 0
-                ? { long: 1, short: 3 }
-                : model === 1
-                  ? { onwards: 2 }
-                  : model === 2 || model === 3
-                    ? { finish: 4 }
-                    : {},
-            ),
-          )
-        },
-      }
+  make(
+    {
+      name: 'Counter',
+      Model: Schema.Number,
+      Message: Schema.Number,
+      start: () => ({ model: 0 }),
+      update: (_model, message) => ({ model: message }),
+      view: (_model, h) => h.div([]),
     },
-    properties: [
-      { name: 'state', state: ({ model }) => model !== 4 },
-      { name: 'transition', transition: (_before, message) => message !== 4 },
-    ],
-  })
+    {
+      *starts() {
+        return
+      },
+      *next({ model }) {
+        return move(
+          yield* fixture(
+            'move',
+            model === 0
+              ? { long: 1, short: 3 }
+              : model === 1
+                ? { onwards: 2 }
+                : model === 2 || model === 3
+                  ? { finish: 4 }
+                  : {},
+          ),
+        )
+      },
+    },
+    {
+      properties: [
+        { name: 'state', state: ({ model }) => model !== 4 },
+        { name: 'transition', transition: (_before, message) => message !== 4 },
+      ],
+    },
+  )
 
 test('counterexamples use shortest explored paths, not earlier live-event discovery', () => {
   const atlas = counter()
   const root = start(atlas)
-  const one = Option.getOrThrow(atlas.send(root, 1))
-  const two = Option.getOrThrow(atlas.send(one, 2))
-  const three = Option.getOrThrow(atlas.send(two, 4))
+  const one = Option.getOrThrow(atlas.interact(root, 1))
+  const two = Option.getOrThrow(atlas.interact(one, 2))
+  const three = Option.getOrThrow(atlas.interact(two, 4))
   expect(atlas.trace(three)).toHaveLength(4)
   expect(atlas.check(0)).toEqual([])
   expect(
@@ -153,11 +157,11 @@ test('depth-first reaches the breadth-first states at the same depth, in its own
   const depth = atlas.reach(4, 'depth')
   expect(new Set(depth.states)).toEqual(new Set(breadth.states))
   expect(depth.states).not.toEqual(breadth.states)
-  expect(depth.isComplete).toBe(breadth.isComplete)
+  expect(depth.status).toBe(breadth.status)
 })
 
 test('long-content Confirm is discovered and its address replays in a fresh atlas', () => {
-  const atlas = signup(SignupLongContentCases)
+  const atlas = signup(signupLongContentEnvironment)
   const confirm = Option.getOrThrow(
     Array.findFirst(atlas.reach(4).states, state => {
       const model = Schema.decodeUnknownSync(Signup.Model)(atlas.encode(state))
@@ -171,37 +175,41 @@ test('long-content Confirm is discovered and its address replays in a fresh atla
     'Move',
     'Move',
   ])
-  const fresh = signup(SignupLongContentCases)
+  const fresh = signup(signupLongContentEnvironment)
   const resolved = Option.getOrThrow(fresh.resolve(atlas.address(confirm)))
   expect(fresh.encode(resolved)).toEqual(atlas.encode(confirm))
   expect(fresh.pending(resolved)).toEqual(atlas.pending(confirm))
 })
 
 const terminalStarts = (count: number) =>
-  make({
-    name: 'Terminal starts',
-    Model: Schema.Number,
-    Message: Schema.Number,
-    update: (model, _message) => ({ model }),
-    view: (_model, h) => h.div([]),
-    *cases() {
-      const model = yield* fixture(
-        'start',
-        Object.fromEntries(
-          Array.makeBy(count, index => [String(index), index]),
-        ),
-      )
-      return { model }
+  make(
+    {
+      name: 'Terminal starts',
+      Model: Schema.Number,
+      Message: Schema.Number,
+      start: (input: number) => ({ model: input }),
+      update: (model, _message) => ({ model }),
+      view: (_model, h) => h.div([]),
     },
-  })
+    {
+      *starts() {
+        return yield* fixture(
+          'start',
+          Object.fromEntries(
+            Array.makeBy(count, index => [String(index), index]),
+          ),
+        )
+      },
+    },
+  )
 
 test('random completeness requires every starting state, not only closed sampled paths', () => {
   const atlas = terminalStarts(40)
   expect(atlas.reach(0).states).toHaveLength(40)
-  expect(atlas.reach(0).isComplete).toBe(true)
+  expect(atlas.reach(0).status).toBe('complete')
   expect(atlas.reach(0, 'random').states.length).toBeLessThanOrEqual(32)
-  expect(atlas.reach(0, 'random').isComplete).toBe(false)
-  expect(terminalStarts(1).reach(0, 'random').isComplete).toBe(true)
+  expect(atlas.reach(0, 'random').status).not.toBe('complete')
+  expect(terminalStarts(1).reach(0, 'random').status).toBe('complete')
 })
 
 test('random walks repeat exactly, and deeper walks extend shallower ones', () => {
@@ -213,4 +221,280 @@ test('random walks repeat exactly, and deeper walks extend shallower ones', () =
   expect(
     Array.every(deep.states, id => atlas.reach(5).states.includes(id)),
   ).toBe(true)
+})
+
+const numberProgram = {
+  name: 'Bounded counter',
+  Model: Schema.Number,
+  Message: Schema.Number,
+  start: (input: number) => ({ model: input }),
+  update: (_model: number, message: number) => ({ model: message }),
+  view: (_model: number, h: import('foldkit/html').HtmlBuilder<number>) =>
+    h.div([]),
+}
+
+const numbers = (count: number) =>
+  Object.fromEntries(Array.makeBy(count, index => [String(index), index]))
+
+test('a state cap stops within starting alternatives and resumes the buffered start', () => {
+  const started: Array<number> = []
+  const atlas = make(
+    {
+      ...numberProgram,
+      start: (input: number) => {
+        started.push(input)
+        return { model: input }
+      },
+    },
+    {
+      *starts() {
+        return yield* fixture('start', numbers(8))
+      },
+    },
+    { limits: { states: 2 } },
+  )
+  const first = atlas.reach(0)
+  expect(first.states.map(atlas.encode)).toEqual([0, 1])
+  expect(first.status).toBe('state-limit')
+  expect(first.unfinishedWork.starts).toBe(true)
+  expect(started).toEqual([0, 1, 2])
+  atlas.reach(0)
+  expect(started).toEqual([0, 1, 2])
+  const resumed = atlas.reach(0, 'breadth', { states: 8 })
+  expect(resumed.states.map(atlas.encode)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+  expect(resumed.status).toBe('complete')
+  expect(started).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+  expect(atlas.reach(0).states).toHaveLength(2)
+})
+
+test('duplicate start outcomes consume work without filling the state budget', () => {
+  const environment: Environment<number, number, number> = {
+    *starts() {
+      yield* fixture('duplicate', numbers(100))
+      return 0
+    },
+  }
+  const atlas = make(numberProgram, environment, {
+    limits: { states: 5, transitions: 4 },
+  })
+  expect(atlas.reach(0)).toMatchObject({
+    status: 'transition-limit',
+    counters: { states: 1, transitions: 4, starts: 4 },
+    unfinishedWork: { starts: true },
+  })
+  expect(atlas.reach(0, 'breadth', { transitions: 101 })).toMatchObject({
+    status: 'complete',
+    counters: { states: 1, transitions: 100, starts: 100 },
+  })
+})
+
+test('duplicate successor alternatives consume transition work and resume without rerunning update', () => {
+  const updates: Array<number> = []
+  const atlas = make(
+    {
+      ...numberProgram,
+      update: (model, message) => {
+        updates.push(message)
+        return { model }
+      },
+    },
+    {
+      *starts() {
+        return 0
+      },
+      *next() {
+        return move(yield* fixture('duplicate', numbers(100)))
+      },
+    },
+    { limits: { states: 5, transitions: 4 } },
+  )
+  expect(atlas.reach(1)).toMatchObject({
+    status: 'transition-limit',
+    counters: { states: 1, transitions: 4, starts: 1 },
+  })
+  expect(updates).toEqual([0, 1, 2])
+  expect(atlas.successorStatus(start(atlas))).toBe('partial')
+  atlas.reach(1)
+  atlas.check(1)
+  describe(atlas, 1)
+  expect(updates).toEqual([0, 1, 2])
+  const resumed = atlas.reach(1, 'breadth', { transitions: 102 })
+  expect(resumed.status).toBe('complete')
+  expect(resumed.counters).toEqual({ states: 1, transitions: 101, starts: 1 })
+  expect(updates).toEqual(Array.range(0, 99))
+})
+
+test('large successor fanout stops at the exact state cap and retains the next outcome', () => {
+  const updates: Array<number> = []
+  const atlas = make(
+    {
+      ...numberProgram,
+      update: (_model, message) => {
+        updates.push(message)
+        return { model: message }
+      },
+    },
+    {
+      *starts() {
+        return -1
+      },
+      *next({ model }) {
+        return move(yield* fixture('next', model === -1 ? numbers(100) : {}))
+      },
+    },
+    { limits: { states: 3 } },
+  )
+  const first = atlas.reach(1)
+  expect(first.states.map(atlas.encode)).toEqual([-1, 0, 1])
+  expect(first.status).toBe('state-limit')
+  expect(updates).toEqual([0, 1, 2])
+  expect(atlas.knownSuccessors(start(atlas))).toHaveLength(2)
+  const resumed = atlas.reach(1, 'breadth', { states: 6 })
+  expect(resumed.states.map(atlas.encode)).toEqual([-1, 0, 1, 2, 3, 4])
+  expect(updates).toEqual([0, 1, 2, 3, 4, 5])
+})
+
+test('depth zero reports its unfinished successor without publishing a deeper state', () => {
+  const updates: Array<number> = []
+  const atlas = make(
+    {
+      ...numberProgram,
+      update: (_model, message) => {
+        updates.push(message)
+        return { model: message }
+      },
+    },
+    {
+      *starts() {
+        return 0
+      },
+      *next({ model }) {
+        return move(model + 1)
+      },
+    },
+  )
+  const initial = atlas.reach(0)
+  expect(initial.states.map(atlas.encode)).toEqual([0])
+  expect(initial.status).toBe('depth-limit')
+  expect(initial.unfinishedWork).toEqual({
+    starts: false,
+    states: 1,
+    transitions: 1,
+  })
+  expect(updates).toEqual([1])
+  describe(atlas, 0)
+  atlas.check(0)
+  expect(updates).toEqual([1])
+  expect(atlas.reach(1).states.map(atlas.encode)).toEqual([0, 1])
+  expect(updates).toEqual([1, 2])
+})
+
+test('breadth, depth, and random searches obey absolute work and state bounds', () => {
+  Array.forEach(['breadth', 'depth', 'random'], search => {
+    if (search !== 'breadth' && search !== 'depth' && search !== 'random') {
+      return
+    }
+    const atlas = make(numberProgram, {
+      *starts() {
+        return 0
+      },
+      *next({ model }) {
+        return move(
+          yield* fixture('increment', { one: model + 1, two: model + 2 }),
+        )
+      },
+    })
+    const reached = atlas.reach(100, search, { states: 3, transitions: 4 })
+    expect(reached.states.length).toBeLessThanOrEqual(3)
+    expect(reached.counters.transitions).toBeLessThanOrEqual(4)
+    expect(reached.status).not.toBe('complete')
+    const resumed = atlas.reach(100, search, { states: 6, transitions: 10 })
+    expect(resumed.states.length).toBeLessThanOrEqual(6)
+    expect(resumed.counters.transitions).toBeLessThanOrEqual(10)
+  })
+})
+
+test('depth-first search uses a bounded stack for a long chain', () => {
+  const atlas = make(numberProgram, {
+    *starts() {
+      return 0
+    },
+    *next({ model }) {
+      return move(model + 1)
+    },
+  })
+  expect(atlas.reach(10_000, 'depth', { states: 2_000 })).toMatchObject({
+    status: 'state-limit',
+    counters: { states: 2_000 },
+  })
+})
+
+test('direct successor inspection is bounded and resumes only with a higher limit', () => {
+  const updates: Array<number> = []
+  const atlas = make(
+    {
+      ...numberProgram,
+      update: (_model, message) => {
+        updates.push(message)
+        return { model: message }
+      },
+    },
+    {
+      *starts() {
+        return -1
+      },
+      *next({ model }) {
+        return move(yield* fixture('move', model === -1 ? numbers(10) : {}))
+      },
+    },
+    { limits: { states: 2, transitions: 20 } },
+  )
+  const root = start(atlas)
+  expect(atlas.successors(root).map(step => atlas.encode(step.to))).toEqual([0])
+  expect(updates).toEqual([0, 1])
+  expect(atlas.successorStatus(root)).toBe('partial')
+  atlas.successors(root)
+  expect(updates).toEqual([0, 1])
+  expect(
+    atlas.successors(root, { states: 4 }).map(step => atlas.encode(step.to)),
+  ).toEqual([0, 1, 2])
+  expect(updates).toEqual([0, 1, 2, 3])
+})
+
+test('transition properties check valid undefined Messages', () => {
+  const checked: Array<undefined> = []
+  const atlas = make<number, undefined, number>(
+    {
+      name: 'Undefined Message',
+      Model: Schema.Number,
+      Message: Schema.Undefined,
+      start: input => ({ model: input }),
+      update: (model: number) => ({ model }),
+      view: (_model, h) => h.div([]),
+    },
+    {
+      *starts() {
+        return 0
+      },
+      *next() {
+        return move(undefined)
+      },
+    },
+    {
+      properties: [
+        {
+          name: 'The transition is rejected',
+          transition: (_before, message) => {
+            checked.push(message)
+            return false
+          },
+        },
+      ],
+    },
+  )
+  const failures = atlas.check(1)
+  expect(checked).toEqual([undefined])
+  expect(failures).toHaveLength(1)
+  expect(failures[0]?.property).toBe('The transition is rejected')
+  expect(failures[0]?.trace).toHaveLength(2)
 })

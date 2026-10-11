@@ -53,51 +53,56 @@ const ChecklistMessage = defineMessageUnion({
 })
 type ChecklistMessage = typeof ChecklistMessage.Type
 
-const checklist = make<Checklist, ChecklistMessage>({
-  name: 'Checklist',
-  Model: Checklist,
-  Message: ChecklistMessage,
-  update: (model, message) =>
-    ChecklistMessage.match<Update.Return<Checklist, ChecklistMessage>>(
-      message,
-      {
-        ToggledItem: () => ({
-          model: modifyFields(model, {
-            items: items =>
-              Array.map(items, (item, index) =>
-                index === model.cursor
-                  ? modifyFields(item, { done: done => !done })
-                  : item,
-              ),
-          }),
-        }),
-        MovedCursor: () => ({
-          model: modifyFields(model, { cursor: cursor => (cursor + 1) % 4 }),
-        }),
-      },
-    ),
-  view: (_model, h) => h.div([]),
-  *cases() {
-    return {
+const checklist = make<Checklist, ChecklistMessage>(
+  {
+    start: () => ({
       model: {
         items: Array.makeBy(10_000, id => ({ id, done: false })),
         cursor: 0,
       },
-      *next() {
-        return send(
-          yield* fixture('move', {
-            toggled: ChecklistMessage.ToggledItem(),
-            moved: ChecklistMessage.MovedCursor(),
+    }),
+    name: 'Checklist',
+    Model: Checklist,
+    Message: ChecklistMessage,
+    update: (model, message) =>
+      ChecklistMessage.match<Update.Return<Checklist, ChecklistMessage>>(
+        message,
+        {
+          ToggledItem: () => ({
+            model: modifyFields(model, {
+              items: items =>
+                Array.map(items, (item, index) =>
+                  index === model.cursor
+                    ? modifyFields(item, { done: done => !done })
+                    : item,
+                ),
+            }),
           }),
-        )
-      },
-    }
+          MovedCursor: () => ({
+            model: modifyFields(model, { cursor: cursor => (cursor + 1) % 4 }),
+          }),
+        },
+      ),
+    view: (_model, h) => h.div([]),
   },
-})
+  {
+    *starts() {
+      return
+    },
+    *next() {
+      return send(
+        yield* fixture('move', {
+          toggled: ChecklistMessage.ToggledItem(),
+          moved: ChecklistMessage.MovedCursor(),
+        }),
+      )
+    },
+  },
+)
 
 test('states of a large Model share everything a step leaves unchanged', () => {
-  const { states, isComplete } = checklist.reach(20)
-  expect(isComplete).toBe(true)
+  const { states, status } = checklist.reach(20)
+  expect(status).toBe('complete')
   expect(states.length).toBe(64)
   expect(checklist.nodes()).toBeLessThan(10_000 + 64 * 4)
 })

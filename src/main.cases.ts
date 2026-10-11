@@ -1,15 +1,15 @@
 import { AsyncData } from 'foldkit'
 
 import {
+  type Environment,
   type NextState,
-  type Setup,
   type Transition,
   answer,
   pendingRequests,
   send,
 } from './lab/atlas'
 import { type Choices, fixture } from './lab/fixture'
-import { FetchWeather, Message, type Model, WeatherAsyncData } from './main'
+import { FetchWeather, Message, type Model } from './main'
 import { weatherData } from './main.fixture'
 
 function* next(state: NextState<Model, Message>): Choices<Transition<Message>> {
@@ -41,10 +41,11 @@ function* next(state: NextState<Model, Message>): Choices<Transition<Message>> {
   return answer(request, message)
 }
 
-export function* WeatherCases(): Choices<Setup<Model, Message>> {
-  const zipCodeInput = yield* fixture('zip', { empty: '', valid: '90210' })
-  return {
-    model: { zipCodeInput, weather: WeatherAsyncData.Idle() },
-    next,
-  }
+export function* WeatherStarts(): Choices<string> {
+  return yield* fixture('zip', { empty: '', valid: '90210' })
+}
+
+export const weatherEnvironment: Environment<Model, Message, string> = {
+  starts: WeatherStarts,
+  next,
 }

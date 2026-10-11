@@ -2,8 +2,7 @@ import { Array, Effect, Option, Schema } from 'effect'
 import { Command } from 'foldkit'
 import { expect, test } from 'vitest'
 
-import * as Weather from '../main'
-import { WeatherCases } from '../main.cases'
+import { weatherEnvironment, weatherProgram } from '../programs'
 import {
   type Atlas,
   type NextState,
@@ -13,6 +12,7 @@ import {
   pendingRequests,
   send,
 } from './atlas'
+import { canonical } from './canonical'
 import { type Choices, fixture } from './fixture'
 
 const ReadValue = Command.define('ReadValue', {
@@ -30,21 +30,28 @@ type Next = (state: NextState<number, number>) => Choices<Transition<number>>
 const start = (atlas: Atlas) =>
   Option.getOrThrow(Array.head(atlas.reach(0).states))
 const counter = (next: Next) =>
-  make({
-    name: 'Counter',
-    Model: Schema.Number,
-    Message: Schema.Number,
-    update: (_model, message) => ({ model: message }),
-    view: (_model, h) => h.div([]),
-    *cases() {
-      const repeated = ReadValue({ value: 10 })
-      return {
-        model: 0,
-        commands: [repeated, Other(), ReadValue({ value: 20 }), repeated],
-        next,
-      }
+  make(
+    {
+      name: 'Counter',
+      Model: Schema.Number,
+      Message: Schema.Number,
+      start: () => {
+        const repeated = ReadValue({ value: 10 })
+        return {
+          model: 0,
+          commands: [repeated, Other(), ReadValue({ value: 20 }), repeated],
+        }
+      },
+      update: (_model, message) => ({ model: message }),
+      view: (_model, h) => h.div([]),
     },
-  })
+    {
+      *starts() {
+        return
+      },
+      next,
+    },
+  )
 
 function* replies(
   state: NextState<number, number>,
@@ -107,24 +114,25 @@ test('an answer cannot consume an invalid position', () => {
   )
 })
 
-test('equal Models with different next functions remain different execution states', () => {
-  const first: Next = function* () {
-    return send(1)
-  }
-  const second: Next = function* () {
-    return send(2)
-  }
-  const atlas = make({
-    name: 'Different behavior',
-    Model: Schema.Number,
-    Message: Schema.Number,
-    update: (_model, message) => ({ model: message }),
-    view: (_model, h) => h.div([]),
-    *cases() {
-      const next = yield* fixture('behavior', { first, second })
-      return { model: 0, next }
+test('equal Models with distinct input context remain distinct execution states', () => {
+  const atlas = make(
+    {
+      name: 'Different behavior',
+      Model: Schema.Number,
+      Message: Schema.Number,
+      start: (_input: number) => ({ model: 0 }),
+      update: (_model, message) => ({ model: message }),
+      view: (_model, h) => h.div([]),
     },
-  })
+    {
+      *starts() {
+        return yield* fixture('behavior', { first: 1, second: 2 })
+      },
+      *next(state) {
+        return send(state.input)
+      },
+    },
+  )
   const starts = atlas.reach(0).states
   expect(starts).toHaveLength(2)
   expect(
@@ -134,16 +142,7 @@ test('equal Models with different next functions remain different execution stat
   ).toEqual([[1], [2]])
 })
 
-const weather = () =>
-  make({
-    name: 'Weather',
-    Model: Weather.Model,
-    Message: Weather.Message,
-    update: Weather.update,
-    view: (model, h) => Weather.view(model, h).body,
-    cases: WeatherCases,
-  })
-
+const weather = () => make(weatherProgram, weatherEnvironment)
 const choose = (atlas: Atlas, state: string, option: string) =>
   Option.getOrThrow(
     Array.findFirst(atlas.successors(state), step =>
@@ -200,60 +199,66 @@ test('next explores user actions before and after a response, without preselecti
 })
 
 test('view interactions are a choice source, not a second exploration path', () => {
-  const atlas = make({
-    name: 'Mixed interactions',
-    Model: Schema.Number,
-    Message: Schema.Number,
-    update: (_model, message) => ({ model: message }),
-    view: (_model, h) => h.button([h.OnClick(2)], ['Two']),
-    *cases() {
-      return {
-        model: 0,
-        inputs: [],
-        *next(state: NextState<number, number>) {
-          const source = yield* fixture('source', {
-            explicit: 'explicit',
-            view: 'view',
-            ignored: 'ignored',
-          })
-          if (source === 'explicit') {
-            return send(1)
-          }
-          if (source === 'ignored') {
-            return send(yield* fixture<number>('none', {}))
-          }
-          return send(yield* fixture('interaction', state.interactions))
-        },
-      }
+  const atlas = make(
+    {
+      name: 'Mixed interactions',
+      Model: Schema.Number,
+      Message: Schema.Number,
+      start: () => ({ model: 0 }),
+      update: (_model, message) => ({ model: message }),
+      view: (_model, h) => h.button([h.OnClick(2)], ['Two']),
     },
-  })
+    {
+      *starts() {
+        return
+      },
+      inputs: [],
+      *next(state) {
+        const source = yield* fixture('source', {
+          explicit: 'explicit',
+          view: 'view',
+          ignored: 'ignored',
+        })
+        if (source === 'explicit') {
+          return send(1)
+        }
+        if (source === 'ignored') {
+          return send(yield* fixture<number>('none', {}))
+        }
+        return send(yield* fixture('interaction', state.interactions))
+      },
+    },
+  )
   const steps = atlas.successors(start(atlas))
   expect(steps.map(step => atlas.encode(step.to))).toEqual([1, 2])
   expect(steps.map(step => step.decisions)).toEqual([
     [{ fixture: 'source', option: 'explicit' }],
     [
       { fixture: 'source', option: 'view' },
-      { fixture: 'interaction', option: '0: click Two' },
+      { fixture: 'interaction', option: canonical(['Move', 2]) },
     ],
   ])
 })
 
 test('next validates Messages against the program schema before applying update', () => {
-  const atlas = make({
-    name: 'Integer Messages',
-    Model: Schema.Number,
-    Message: Schema.Int,
-    update: (_model, message) => ({ model: message }),
-    view: (_model, h) => h.div([]),
-    *cases() {
-      return {
-        model: 0,
-        *next() {
-          return send(0.5)
-        },
-      }
+  const atlas = make(
+    {
+      name: 'Integer Messages',
+      Model: Schema.Number,
+      Message: Schema.Int,
+      start: () => ({ model: 0 }),
+      update: (_model, message) => ({ model: message }),
+      view: (_model, h) => h.div([]),
     },
-  })
+    {
+      *starts() {
+        return
+      },
+      *next() {
+        return send(0.5)
+      },
+    },
+  )
   expect(() => atlas.successors(start(atlas))).toThrow(
     'next returned an invalid Message',
   )
