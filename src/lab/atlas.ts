@@ -183,6 +183,7 @@ export type Atlas = Readonly<{
   groups: (states: ReadonlyArray<string>) => ReadonlyArray<Group>
   grouping: string
   reach: (depth: number, search?: Search, limits?: Limits) => Reach
+  describe: (depth: number) => string
   successors: (state: string, limits?: Limits) => ReadonlyArray<Step>
   knownSuccessors: (state: string) => ReadonlyArray<Step>
   successorStatus: (state: string) => SuccessorStatus
@@ -1043,8 +1044,46 @@ export const make = <Model, Message, Input = void>(
     return Array.fromIterable(grouped.values())
   }
 
+  const describeReach = (depth: number): string => {
+  const { reach: reached, edges } = run(depth, 'breadth')
+  const stateView = (id: string) => [
+    '',
+    `${id}  ${Array.join(
+      Array.map(nodeOf(id).trace, step => step.label),
+      ' › ',
+    )}`,
+    `    ${formatValue(encodeModel(nodeOf(id).model))}`,
+    ...Array.map(
+      Array.map(nodeOf(id).pending, command => ({
+        name: command.name,
+        args: formatValue(command.args ?? {}),
+      })),
+      ({ name, args }) => `    pending ${name} ${args}`,
+    ),
+    ...Array.match(edges.get(id) ?? [], {
+      onEmpty: () => [],
+      onNonEmpty: steps => [
+        `    ${Array.join(
+          Array.map(steps, step => `${step.label} → ${step.to}`),
+          ' · ',
+        )}`,
+      ],
+    }),
+  ]
+  return Array.join(
+    [
+      `# ${program.name} · depth ${depth} · ${reached.states.length} states · ${reached.status}`,
+      `# Transitions: next(state); limits: ${limits.states} states, ${limits.transitions} alternatives (including starts)`,
+      ...Array.flatMap(reached.states, stateView),
+      '',
+    ],
+    '\n',
+  )
+}
+
   return {
     name: program.name,
+    describe: describeReach,
     limits,
     propertyNames: Array.map(
       options.properties ?? [],
@@ -1101,36 +1140,5 @@ export const make = <Model, Message, Input = void>(
 
 // DESCRIBE
 
-export const describe = (atlas: Atlas, depth: number): string => {
-  const reached = atlas.reach(depth)
-  const stateView = (id: string) => [
-    '',
-    `${id}  ${Array.join(
-      Array.map(atlas.trace(id), step => step.label),
-      ' › ',
-    )}`,
-    `    ${formatValue(atlas.encode(id))}`,
-    ...Array.map(
-      atlas.pending(id),
-      ({ name, args }) => `    pending ${name} ${args}`,
-    ),
-    ...Array.match(atlas.knownSuccessors(id), {
-      onEmpty: () => [],
-      onNonEmpty: steps => [
-        `    ${Array.join(
-          Array.map(steps, step => `${step.label} → ${step.to}`),
-          ' · ',
-        )}`,
-      ],
-    }),
-  ]
-  return Array.join(
-    [
-      `# ${atlas.name} · depth ${depth} · ${reached.states.length} states · ${reached.status}`,
-      `# Transitions: next(state); limits: ${atlas.limits.states} states, ${atlas.limits.transitions} alternatives (including starts)`,
-      ...Array.flatMap(reached.states, stateView),
-      '',
-    ],
-    '\n',
-  )
-}
+export const describe = (atlas: Atlas, depth: number): string =>
+  atlas.describe(depth)
