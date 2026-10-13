@@ -104,6 +104,7 @@ export type FindingKind =
   | 'content'
   | 'action-added'
   | 'action-removed'
+  | 'action-changed'
   | 'pending'
   | 'commands'
   | 'event-added'
@@ -272,6 +273,17 @@ const changes = (
 }
 
 const actionLabel = (label: string): string => label.replace(/^click /, '')
+
+const actionsByLabel = (actions: Observation['actions']) => {
+  const grouped = new Map<string, Array<Observation['actions'][number]>>()
+  Array.forEach(actions, action => {
+    grouped.set(
+      action.label,
+      Array.append(grouped.get(action.label) ?? [], action),
+    )
+  })
+  return grouped
+}
 
 const messageLabel = (message: unknown): string =>
   Predicate.hasProperty(message, '_tag') && typeof message._tag === 'string'
@@ -681,6 +693,36 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
           : 'The rendered structure changed.',
         change.before,
         change.after,
+        evidence,
+      )
+    })
+    const beforeBindings = actionsByLabel(before.actions)
+    const afterBindings = actionsByLabel(after.actions)
+    Array.forEach(before.actions, (action, index) => {
+      const previous = beforeBindings.get(action.label) ?? []
+      const current = afterBindings.get(action.label) ?? []
+      const stableLabel = previous.length === 1 && current.length === 1
+      // Identical markup also lets us identify repeated labels by position.
+      const counterpart = stableLabel
+        ? current[0]
+        : deltas.length === 0 &&
+            before.actions.length === after.actions.length &&
+            after.actions[index]?.label === action.label
+          ? after.actions[index]
+          : undefined
+      if (counterpart === undefined || action.key === counterpart.key) {
+        return
+      }
+      const control = stableLabel
+        ? actionLabel(action.label)
+        : `${actionLabel(action.label)} #${index + 1}`
+      record(
+        [control, action.key, counterpart.key],
+        'action-changed',
+        `Action ${JSON.stringify(control)} changed Message`,
+        'The same supported control now emits a different Message.',
+        action,
+        counterpart,
         evidence,
       )
     })

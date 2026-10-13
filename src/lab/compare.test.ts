@@ -136,6 +136,74 @@ test('matches a Message after a copy edit and groups each repeated heading chang
   )
 })
 
+
+test('detects swapped control handlers without changing semantic event matching', () => {
+  const before = numeric({
+    view: (_model, h) =>
+      h.div([], [
+        h.button([h.OnClick(1)], ['Delete']),
+        h.button([h.OnClick(2)], ['Cancel']),
+      ]),
+  })
+  const after = numeric({
+    view: (_model, h) =>
+      h.div([], [
+        h.button([h.OnClick(2)], ['Delete']),
+        h.button([h.OnClick(1)], ['Cancel']),
+      ]),
+  })
+  const shared: Environment<number, number, number> = {
+    *starts() {
+      return 0
+    },
+    inputs: [],
+    *next(state) {
+      return send(yield* fixture('interaction', state.interactions))
+    },
+  }
+  const result = compare({ before, after, environment: shared, limits })
+  expect(result.status).toBe('complete')
+  expect(result.findings.map(finding => finding.kind)).toEqual([
+    'action-changed',
+    'action-changed',
+  ])
+  expect(result.findings.map(finding => finding.title)).toEqual([
+    'Action "Delete" changed Message',
+    'Action "Cancel" changed Message',
+  ])
+  expect(result.findings.every(finding => finding.examples.length === 3)).toBe(
+    true,
+  )
+  expect(result.findings[0]?.before).not.toEqual(result.findings[0]?.after)
+})
+
+test('disambiguates same-label controls by position when markup is unchanged', () => {
+  const before = numeric({
+    view: (_model, h) =>
+      h.div([], [
+        h.button([h.OnClick(1)], ['Choose']),
+        h.button([h.OnClick(2)], ['Choose']),
+      ]),
+  })
+  const after = numeric({
+    view: (_model, h) =>
+      h.div([], [
+        h.button([h.OnClick(2)], ['Choose']),
+        h.button([h.OnClick(1)], ['Choose']),
+      ]),
+  })
+  const result = compare({
+    before,
+    after,
+    environment: environment(),
+    limits,
+  })
+  expect(result.findings.map(finding => finding.kind)).toEqual([
+    'action-changed',
+    'action-changed',
+  ])
+})
+
 test('records an unmatched action only on the real side and replays it freshly', () => {
   const before = numeric({
     view: (_model, h) => h.button([h.OnClick(1)], ['Retry']),
