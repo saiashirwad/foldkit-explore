@@ -657,6 +657,48 @@ test('counts alternatives even when every Message returns to the same state', ()
   expect(result.counters.transitions).toBe(1_001)
 })
 
+
+test('matches a large self-loop event set incrementally and reconciles missing keys once', () => {
+  const program = numeric({
+    update: model => ({ model }),
+    view: (_model, h) => h.div([]),
+  })
+  const after = numeric({
+    start: () => ({ model: 1 }),
+    update: program.update,
+    view: program.view,
+  })
+  const beforeOptions = Object.fromEntries(
+    Array.range(1, 3_000).map(value => [String(value), value]),
+  )
+  const afterOptions = Object.fromEntries(
+    Array.range(2, 3_000).map(value => [String(value), value]),
+  )
+  const shared = environment(function* (state) {
+    return send(
+      yield* fixture('loop', state.model === 0 ? beforeOptions : afterOptions),
+    )
+  })
+  const result = compare({
+    before: program,
+    after,
+    environment: shared,
+    limits: { depth: 1, states: 2, pairs: 2, transitions: 8 },
+  })
+  expect(result.status).toBe('transition-limit')
+  result.resume({ depth: 1, states: 2, pairs: 2, transitions: 6_001 })
+  expect(result.status).toBe('complete')
+  expect(result.counters).toMatchObject({
+    beforeStates: 1,
+    afterStates: 1,
+    pairs: 1,
+    transitions: 6_000,
+  })
+  expect(result.findings).toHaveLength(1)
+  expect(result.findings[0]?.kind).toBe('event-removed')
+  expect(result.findings[0]?.shortest.trace[1]?.beforeEvent?.message).toBe(1)
+}, 20_000)
+
 test('rejects duplicate semantic event keys explicitly', () => {
   const program = numeric()
   const shared = environment(function* () {

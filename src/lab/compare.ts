@@ -194,7 +194,9 @@ type Pair<BeforeModel, AfterModel, Message, Input> = {
   depth: number
   beforeEvents: Enumeration<Message>
   afterEvents: Enumeration<Message>
-  processed: Set<string>
+  ready: Array<string>
+  nextReady: number
+  reconciled: boolean
   turn: ComparisonSide
   buffered:
     | Readonly<{
@@ -913,7 +915,9 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
       depth: trace.length - 1,
       beforeEvents: enumeration(),
       afterEvents: enumeration(),
-      processed: new Set(),
+      ready: [],
+      nextReady: 0,
+      reconciled: false,
       turn: 'before',
       buffered: undefined,
     }
@@ -968,22 +972,26 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
   const readyEvent = (
     pair: Pair<BeforeModel, AfterModel, Message, Input>,
   ): string | undefined => {
-    const matched = Array.fromIterable(pair.beforeEvents.events.keys()).find(
-      key => pair.afterEvents.events.has(key) && !pair.processed.has(key),
-    )
-    if (matched !== undefined) {
-      return matched
-    }
+    // A matched event is queued once, as soon as the second side offers it.
+    // Only after both iterators finish can we queue unmatched alternatives.
     if (
+      !pair.reconciled &&
       pair.beforeEvents.status === 'complete' &&
       pair.afterEvents.status === 'complete'
     ) {
-      return [
-        ...pair.beforeEvents.events.keys(),
-        ...pair.afterEvents.events.keys(),
-      ].find(key => !pair.processed.has(key))
+      pair.reconciled = true
+      for (const key of pair.beforeEvents.events.keys()) {
+        if (!pair.afterEvents.events.has(key)) {
+          pair.ready.push(key)
+        }
+      }
+      for (const key of pair.afterEvents.events.keys()) {
+        if (!pair.beforeEvents.events.has(key)) {
+          pair.ready.push(key)
+        }
+      }
     }
-    return undefined
+    return pair.ready[pair.nextReady]
   }
   const applyReady = (
     pair: Pair<BeforeModel, AfterModel, Message, Input>,
@@ -1086,7 +1094,7 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
         evidence,
       )
     }
-    pair.processed.add(buffered.key)
+    pair.nextReady += 1
     pair.buffered = undefined
     return true
   }
@@ -1094,6 +1102,8 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
     runtime: ReturnType<typeof makeRuntime<Model>>,
     node: Node<Model, Message, Input>,
     cursor: Enumeration<Message>,
+    counterpart: Enumeration<Message>,
+    ready: Array<string>,
     side: ComparisonSide,
   ): boolean => {
     if (cursor.status === 'unseen') {
@@ -1126,6 +1136,9 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
       )
     }
     cursor.events.set(selected.evidence.key, selected)
+    if (counterpart.events.has(selected.evidence.key)) {
+      ready.push(selected.evidence.key)
+    }
     return true
   }
   const advance = (): boolean => {
@@ -1163,8 +1176,22 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
         : 'after'
     pair.turn = side === 'before' ? 'after' : 'before'
     return side === 'before'
-      ? consume(beforeRuntime, pair.before, pair.beforeEvents, side)
-      : consume(afterRuntime, pair.after, pair.afterEvents, side)
+      ? consume(
+          beforeRuntime,
+          pair.before,
+          pair.beforeEvents,
+          pair.afterEvents,
+          pair.ready,
+          side,
+        )
+      : consume(
+          afterRuntime,
+          pair.after,
+          pair.afterEvents,
+          pair.beforeEvents,
+          pair.ready,
+          side,
+        )
   }
   const run = () => {
     stopped.status = 'complete'
