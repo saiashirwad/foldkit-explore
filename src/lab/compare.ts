@@ -1296,13 +1296,17 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
       }
       if (frame.beforeEvent !== undefined && frame.afterEvent === undefined) {
         if (index !== trace.length - 2) {
-          throw new Error('Comparison replay requires unmatched events to be terminal.')
+          throw new Error(
+            'Comparison replay requires unmatched events to be terminal.',
+          )
         }
         verifyMissing(replayAfter, current.after, frame.beforeEvent)
       }
       if (frame.afterEvent !== undefined && frame.beforeEvent === undefined) {
         if (index !== trace.length - 2) {
-          throw new Error('Comparison replay requires unmatched events to be terminal.')
+          throw new Error(
+            'Comparison replay requires unmatched events to be terminal.',
+          )
         }
         verifyMissing(replayBefore, current.before, frame.afterEvent)
       }

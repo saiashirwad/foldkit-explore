@@ -1045,41 +1045,38 @@ export const make = <Model, Message, Input = void>(
   }
 
   const describeReach = (depth: number): string => {
-  const { reach: reached, edges } = run(depth, 'breadth')
-  const stateView = (id: string) => [
-    '',
-    `${id}  ${Array.join(
-      Array.map(nodeOf(id).trace, step => step.label),
-      ' › ',
-    )}`,
-    `    ${formatValue(encodeModel(nodeOf(id).model))}`,
-    ...Array.map(
-      Array.map(nodeOf(id).pending, command => ({
-        name: command.name,
-        args: formatValue(command.args ?? {}),
-      })),
-      ({ name, args }) => `    pending ${name} ${args}`,
-    ),
-    ...Array.match(edges.get(id) ?? [], {
-      onEmpty: () => [],
-      onNonEmpty: steps => [
-        `    ${Array.join(
-          Array.map(steps, step => `${step.label} → ${step.to}`),
-          ' · ',
-        )}`,
-      ],
-    }),
-  ]
-  return Array.join(
-    [
-      `# ${program.name} · depth ${depth} · ${reached.states.length} states · ${reached.status}`,
-      `# Transitions: next(state); limits: ${limits.states} states, ${limits.transitions} alternatives (including starts)`,
-      ...Array.flatMap(reached.states, stateView),
+    const { reach: reached, edges } = run(depth, 'breadth')
+    const stateView = (id: string) => [
       '',
-    ],
-    '\n',
-  )
-}
+      `${id}  ${Array.join(
+        Array.map(nodeOf(id).trace, step => step.label),
+        ' › ',
+      )}`,
+      `    ${formatValue(encodeModel(nodeOf(id).model))}`,
+      ...Array.map(
+        nodeOf(id).pending,
+        command => `    pending ${command.name} ${formatValue(command.args ?? {})}`,
+      ),
+      ...Array.match(edges.get(id) ?? [], {
+        onEmpty: () => [],
+        onNonEmpty: steps => [
+          `    ${Array.join(
+            Array.map(steps, step => `${step.label} → ${step.to}`),
+            ' · ',
+          )}`,
+        ],
+      }),
+    ]
+    return Array.join(
+      [
+        `# ${program.name} · depth ${depth} · ${reached.states.length} states · ${reached.status}`,
+        `# Transitions: next(state); limits: ${limits.states} states, ${limits.transitions} alternatives (including starts)`,
+        ...Array.flatMap(reached.states, stateView),
+        '',
+      ],
+      '\n',
+    )
+  }
 
   return {
     name: program.name,
