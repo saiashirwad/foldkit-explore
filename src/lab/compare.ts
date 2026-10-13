@@ -279,10 +279,12 @@ const actionLabel = (label: string): string => label.replace(/^click /, '')
 const actionsByLabel = (actions: Observation['actions']) => {
   const grouped = new Map<string, Array<Observation['actions'][number]>>()
   Array.forEach(actions, action => {
-    grouped.set(
-      action.label,
-      Array.append(grouped.get(action.label) ?? [], action),
-    )
+    const known = grouped.get(action.label)
+    if (known === undefined) {
+      grouped.set(action.label, [action])
+    } else {
+      known.push(action)
+    }
   })
   return grouped
 }
