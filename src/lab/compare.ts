@@ -1236,9 +1236,48 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
       runtime.nodes.set(replayed.node.key, replayed.node)
       return replayed
     }
-    Array.forEach(trace.slice(1), frame => {
+    const verifyMissing = <Model extends BeforeModel | AfterModel>(
+      runtime: ReturnType<typeof makeRuntime<Model>>,
+      node: Node<Model, Message, Input> | undefined,
+      offered: ComparisonEvent,
+    ) => {
+      if (node === undefined) {
+        throw new Error('Comparison replay cannot verify an unmatched side.')
+      }
+      const next = runtime.next(node)
+      if (next === undefined) {
+        return
+      }
+      let examined = 0
+      for (const candidate of outcomes(next)) {
+        if (examined >= work.limits.transitions) {
+          throw new Error(
+            'Comparison replay cannot verify a missing event within its transition limit.',
+          )
+        }
+        examined += 1
+        if (runtime.event(node, candidate).evidence.key === offered.key) {
+          throw new Error(
+            'Comparison replay diverged: a previously missing event is now available.',
+          )
+        }
+      }
+    }
+    Array.forEach(trace.slice(1), (frame, index) => {
       if (frame.kind !== 'Transition') {
         throw new Error('Comparison replay found an unexpected starting frame.')
+      }
+      if (frame.beforeEvent !== undefined && frame.afterEvent === undefined) {
+        if (index !== trace.length - 2) {
+          throw new Error('Comparison replay requires unmatched events to be terminal.')
+        }
+        verifyMissing(replayAfter, current.after, frame.beforeEvent)
+      }
+      if (frame.afterEvent !== undefined && frame.beforeEvent === undefined) {
+        if (index !== trace.length - 2) {
+          throw new Error('Comparison replay requires unmatched events to be terminal.')
+        }
+        verifyMissing(replayBefore, current.before, frame.afterEvent)
       }
       const replayedBefore = replayEvent(
         replayBefore,

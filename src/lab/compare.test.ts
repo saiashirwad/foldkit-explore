@@ -238,6 +238,77 @@ test('records an unmatched action only on the real side and replays it freshly',
   }
 })
 
+
+test('fresh replay rejects a missing event that is now available on both sides', () => {
+  const before = numeric({
+    view: (_model, h) => h.div([], ['Same screen']),
+  })
+  const after = numeric({
+    start: () => ({ model: 1 }),
+    view: before.view,
+  })
+  const original = compare({
+    before,
+    after,
+    environment: environment(state =>
+      choices(state.model === 0 ? [7] : []),
+    ),
+    limits,
+  })
+  const removed = original.findings.find(
+    finding => finding.kind === 'event-removed',
+  )
+  expect(removed?.shortest.trace[1]?.afterEvent).toBeUndefined()
+  expect(removed?.shortest.trace[1]?.beforeEvent?.message).toBe(7)
+  if (removed === undefined) {
+    return
+  }
+  const fresh = compare({
+    before,
+    after,
+    environment: environment(() => choices([7])),
+    limits,
+  })
+  expect(fresh.findings.some(finding => finding.kind === 'event-removed')).toBe(
+    false,
+  )
+  expect(() => fresh.replay(removed.shortest.trace)).toThrow(
+    'a previously missing event is now available',
+  )
+})
+
+test('fresh replay refuses to certify missing events from incomplete enumeration', () => {
+  const before = numeric({ view: (_model, h) => h.div([]) })
+  const after = numeric({
+    start: () => ({ model: 1 }),
+    view: before.view,
+  })
+  const original = compare({
+    before,
+    after,
+    environment: environment(state =>
+      choices(state.model === 0 ? [7] : []),
+    ),
+    limits,
+  })
+  const trace = original.findings.find(
+    finding => finding.kind === 'event-removed',
+  )?.shortest.trace
+  const fresh = compare({
+    before,
+    after,
+    environment: environment(state =>
+      choices(state.model === 0 ? [7] : Array.range(10, 20)),
+    ),
+    limits: { depth: 1, states: 100, transitions: 3 },
+  })
+  if (trace !== undefined) {
+    expect(() => fresh.replay(trace)).toThrow(
+      'cannot verify a missing event within its transition limit',
+    )
+  }
+})
+
 test('an added submission records its extra pending work and state-property failure', () => {
   const before = numeric({
     start: () => ({ model: 0, commands: [ReadValue({ value: 1 })] }),
