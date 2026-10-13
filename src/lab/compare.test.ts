@@ -738,6 +738,59 @@ const ComparisonElement = CustomElement.define({
   events: {},
 })
 
+
+const withComparisonValue = (value: unknown) =>
+  numeric({
+    view: (_model, h) => {
+      const element = ComparisonElement.withMessage(h)
+      return element([element.Value(value)])
+    },
+  })
+
+test('reports signed-zero changes in custom-element content', () => {
+  const result = compare({
+    before: withComparisonValue(-0),
+    after: withComparisonValue(0),
+    environment: environment(),
+    limits,
+  })
+  const content = result.findings.filter(finding => finding.kind === 'content')
+  expect(content).toHaveLength(1)
+  expect(Object.is(content[0]?.before, -0)).toBe(true)
+  expect(Object.is(content[0]?.after, 0)).toBe(true)
+})
+
+test('compares non-enumerable data fields without reusing another screen delta', () => {
+  const withNonEnumerableField = (offset: number) =>
+    numeric({
+      view: (model, h) => {
+        const element = ComparisonElement.withMessage(h)
+        return element([
+          element.Value(
+            Object.defineProperty({}, 'code', { value: model + offset }),
+          ),
+        ])
+      },
+    })
+  const shared: Environment<number, number, number> = {
+    *starts() {
+      return yield* fixture('input', { first: 0, second: 10 })
+    },
+  }
+  const result = compare({
+    before: withNonEnumerableField(1),
+    after: withNonEnumerableField(2),
+    environment: shared,
+    limits,
+  })
+  expect(result.status).toBe('complete')
+  const content = result.findings.filter(finding => finding.kind === 'content')
+  expect(content.map(finding => [finding.before, finding.after])).toEqual([
+    [1, 2],
+    [11, 12],
+  ])
+})
+
 test('preserves absent properties, undefined values, and Option variants in structured content differences', () => {
   const missing = numeric({
     view: (_model, h) => ComparisonElement.withMessage(h)([]),

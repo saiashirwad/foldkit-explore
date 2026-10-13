@@ -13,7 +13,7 @@ import {
   limit,
   remaining,
 } from './atlas'
-import { canonical } from './canonical'
+import { canonical, ownDataEntries } from './canonical'
 import { formatValue } from './display'
 import {
   type Choices,
@@ -224,7 +224,7 @@ const changes = (
   after: unknown,
   path = 'screen',
 ): ReadonlyArray<Change> => {
-  if (before === after || canonical(before) === canonical(after)) {
+  if (Object.is(before, after) || canonical(before) === canonical(after)) {
     return []
   }
   if (Array.isArray(before) && Array.isArray(after)) {
@@ -252,8 +252,8 @@ const changes = (
     isStructural(before) &&
     isStructural(after)
   ) {
-    const left = new Map(Object.entries(before))
-    const right = new Map(Object.entries(after))
+    const left = new Map(ownDataEntries(before))
+    const right = new Map(ownDataEntries(after))
     return Array.flatMap(
       Array.dedupe([...left.keys(), ...right.keys()]),
       key =>
@@ -366,7 +366,7 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
     unknown,
     ReturnType<typeof inspect<unknown, Message>>
   >()
-  const screenDeltas = new Map<unknown, ReadonlyArray<Change>>()
+  const screenDeltas = new Map<string, ReadonlyArray<Change>>()
   const makeRuntime = <Model extends BeforeModel | AfterModel>(
     program: Program<Model, Message, Input>,
     prefix: string,
@@ -664,7 +664,7 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
     if (before === undefined || after === undefined) {
       return
     }
-    const key = identity.of([before.screen, after.screen])
+    const key = canonical([before.screen, after.screen])
     const deltas = screenDeltas.get(key) ?? changes(before.screen, after.screen)
     screenDeltas.set(key, deltas)
     Array.forEach(deltas, change => {

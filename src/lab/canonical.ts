@@ -10,6 +10,15 @@ const propertyValue = (value: object, key: string): unknown => {
   return descriptor.value
 }
 
+// Use the same own-data property domain for canonical keys and content deltas.
+export const ownDataEntries = (
+  value: object,
+): ReadonlyArray<readonly [string, unknown]> =>
+  Array.map(
+    Object.getOwnPropertyNames(value),
+    (key): readonly [string, unknown] => [key, propertyValue(value, key)],
+  )
+
 // NOTE: This is a matching key, not JSON. Explicit tokens preserve values JSON
 // would omit or collapse; Option instances keep their public Some/None meaning.
 export const canonical = (value: unknown): string => {
