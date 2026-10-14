@@ -4,7 +4,27 @@ import { expect, test } from 'vitest'
 import { type Choices, fixture, outcomes } from './fixture'
 
 const values = <Output>(choices: () => Choices<Output>) =>
-  Array.map(outcomes(choices), ({ value }) => value)
+  Array.map(Array.fromIterable(outcomes(choices)), ({ value }) => value)
+
+test('fixtures preserve NaN, signed zero, undefined, and offered references', () => {
+  const offered = { name: 'Ada' }
+  function* choices(): Choices<unknown> {
+    return yield* fixture<unknown>('value', {
+      nan: NaN,
+      zero: 0,
+      negativeZero: -0,
+      missing: undefined,
+      object: offered,
+    })
+  }
+  const result = values(choices)
+  expect(result).toHaveLength(5)
+  expect(result[0]).toBeNaN()
+  expect(result[1]).toBe(0)
+  expect(result[2]).toBe(-0)
+  expect(result[3]).toBeUndefined()
+  expect(result[4]).toBe(offered)
+})
 
 test('nested choices compose with their own value types', () => {
   function* enabled(): Choices<boolean> {
@@ -33,7 +53,12 @@ test('control flow decides which choices exist', () => {
     }
     return yield* fixture('shape', { round: 'round', square: 'square' })
   }
-  expect(Array.map(outcomes(request), ({ decisions }) => decisions)).toEqual([
+  expect(
+    Array.map(
+      Array.fromIterable(outcomes(request)),
+      ({ decisions }) => decisions,
+    ),
+  ).toEqual([
     [{ fixture: 'status', option: 'loading' }],
     [
       { fixture: 'status', option: 'ready' },
@@ -59,5 +84,26 @@ test('a fixture name may appear only once along a path', () => {
     yield* fixture('same', { one: 1 })
     return yield* fixture('same', { two: 2 })
   }
-  expect(() => outcomes(twice)).toThrow('appears twice')
+  expect(() => Array.fromIterable(outcomes(twice))).toThrow('appears twice')
+})
+
+test('outcomes evaluates only demanded alternatives and resumes in order', () => {
+  const completed: Array<number> = []
+  function* choices(): Choices<number> {
+    const value = yield* fixture('value', { first: 1, second: 2, third: 3 })
+    completed.push(value)
+    return value
+  }
+  const iterator = outcomes(choices)
+  expect(completed).toEqual([])
+  expect(iterator.next().value).toEqual({
+    decisions: [{ fixture: 'value', option: 'first' }],
+    value: 1,
+  })
+  expect(completed).toEqual([1])
+  expect(iterator.next().value).toEqual({
+    decisions: [{ fixture: 'value', option: 'second' }],
+    value: 2,
+  })
+  expect(completed).toEqual([1, 2])
 })

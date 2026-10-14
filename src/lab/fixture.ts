@@ -21,7 +21,7 @@ export function* fixture<const Value>(
 ): Choices<Value> {
   const chosen = yield { name, cases }
   return Option.getOrThrowWith(
-    Array.findFirst(Record.values(cases), value => value === chosen),
+    Array.findFirst(Record.values(cases), value => Object.is(value, chosen)),
     () => new Error(`Fixture "${name}" received a value it does not offer.`),
   )
 }
@@ -33,7 +33,7 @@ export type Outcome<Output> = Readonly<{
   value: Output
 }>
 
-const replay = <Output>(
+export const replay = <Output>(
   choices: () => Choices<Output>,
   decisions: ReadonlyArray<Decision>,
 ) => {
@@ -50,19 +50,27 @@ const replay = <Output>(
   })
 }
 
-export const outcomes = <Output>(
+export function* outcomes<Output>(
   choices: () => Choices<Output>,
   decisions: ReadonlyArray<Decision> = [],
-): ReadonlyArray<Outcome<Output>> => {
-  const step = replay(choices, decisions)
-  if (step.done) {
-    return [{ decisions, value: step.value }]
+): Generator<Outcome<Output>, void, unknown> {
+  const paths = [decisions]
+  while (Array.isArrayNonEmpty(paths)) {
+    const path = paths.pop()
+    if (path === undefined) {
+      return
+    }
+    const step = replay(choices, path)
+    if (step.done) {
+      yield { decisions: path, value: step.value }
+    } else {
+      const { name, cases } = step.value
+      if (Array.some(path, decision => decision.fixture === name)) {
+        throw new Error(`Fixture "${name}" appears twice along one path.`)
+      }
+      Array.forEach(Array.reverse(Record.keys(cases)), option =>
+        paths.push(Array.append(path, { fixture: name, option })),
+      )
+    }
   }
-  const { name, cases } = step.value
-  if (Array.some(decisions, decision => decision.fixture === name)) {
-    throw new Error(`Fixture "${name}" appears twice along one path.`)
-  }
-  return Array.flatMap(Record.keys(cases), option =>
-    outcomes(choices, Array.append(decisions, { fixture: name, option })),
-  )
 }

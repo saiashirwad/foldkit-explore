@@ -12,7 +12,7 @@ subtree_prompted: false
 
 ### What this is
 
-Foldkit Explore shows every state a Foldkit program can reach, on one page. It began as Branch Lab, a React prototype (`~/code/eva-idea`) in which a component's case generator yielded named choices (`fixture()`) and a replay search rendered every combination. Here the same choice language drives a real Elm-style program. Because `update` is pure and Models are plain data, the lab steps states directly instead of replaying them. It explores _time_ (moves and Command answers) as well as setup, and works toward model checking for UIs.
+Foldkit Explore shows reachable states of a Foldkit program within a declared environment and explicit limits. It also compares two program versions under one shared environment. It began as Branch Lab, a React prototype (`~/code/eva-idea`) in which a component's case generator yielded named choices (`fixture()`) and a replay search rendered every combination. Here the same choice language drives a real Elm-style program. Because `update` is pure and Models are plain data, the lab steps states directly instead of replaying them. It explores _time_ (moves and Command answers) as well as setup, and works toward model checking for UIs.
 
 The person driving this reads every line. Keep changes small, idiomatic and easy to review. Ask before changing a direction that has already been settled.
 
@@ -29,38 +29,60 @@ bunx oxfmt src          # format
 ### Vocabulary
 
 - **fixture**: `yield* fixture('name', { option: value })`. A named choice. Control flow decides whether a fixture is reached, and an empty fixture prunes its path.
-- **Choices<T>**: a generator of fixtures that returns a `T`. `outcomes()` enumerates every way it can finish, by replay.
-- **Setup**: what a program's `cases` generator returns: `{ model, commands?, next?, inputs? }`.
-- **NextState**: the current Model, pending Commands, and named view-derived `interactions` (empty without an `inputs` domain).
-- **next**: `(state: NextState<Model, Message>) => Choices<Transition<Message>>`. One generator enumerates all possible next transitions, not a whole scenario. Empty fixtures prune paths; early returns produce transitions.
-- **Move / Answer**: `send(message)` preserves the pending queue; `answer(request, message)` consumes exactly the selected occurrence. Both run the real update. `pendingRequests(state, CommandDefinition)` supplies typed occurrences as a record for a fixture. Scheduling restrictions belong in `next`, not the atlas.
-- **Atlas** (`src/lab/atlas.ts`): one program's memoized state graph.
-- **State id**: `S1`, `S2`… in discovery order. Only valid within one session.
-- **Address**: the list of hops (kind, decisions, maybe an encoded Message) from a start to a state. Stable across sessions. The lab's Model stores addresses, never ids.
-- **Card / slot / home**: a card is a slot in the grid. Its home is the state it starts at, and it can be moved to other states. A pin is an extra slot.
+- **Choices<T>**: a generator of fixtures that returns a `T`. `outcomes()` is a lazy generator of `{ decisions, value }`; consuming its next item replays one choice computation.
+- **Program<Model, Message, Input = void>**: the application's `name`, Model and Message codecs, pure `start(input)`, `update`, and `view`. The program owns initialization and initial Commands. Properties and environment choices do not belong on Program.
+- **Environment<Model, Message, Input = void>**: `starts(): Choices<Input>`, optional finite view `inputs`, and optional `next`. Starting choices return inputs, never preconstructed Models or setup objects.
+- **NextState**: current Model, pending Commands, original `input`, and semantic-keyed view-derived `interactions` (empty without an `inputs` domain). Carry starting choices that affect future environment behavior in `input`.
+- **next**: `(state: NextState<Model, Message, Input>) => Choices<Transition<Message>>`. It describes one possible next step, not a whole scenario. Empty fixtures prune paths; early returns produce transitions.
+- **Move / Answer**: `send(message)` preserves the pending queue; `answer(request, message)` consumes exactly the selected occurrence. Both use the real update. `pendingRequests(state, CommandDefinition)` supplies typed occurrences as a record for a fixture. Scheduling restrictions belong in the environment.
+- **Atlas** (`src/lab/atlas.ts`): one program/environment pair's memoized execution graph, constructed with `make(program, environment, { properties?, limits? })`.
+- **Observation**: structured `screen`, available `actions` with separate semantic keys and readable labels, and all pending Command descriptions. `atlas.observe(id)` exposes it.
+- **Comparison**: fresh breadth-first paired exploration of before and after Programs under one Environment, with grouped findings, concrete examples, replayable traces, and explicit incomplete status.
+- **State id**: `S1`, `S2`… in discovery order. Only valid within one atlas session; comparison execution and pair ids are likewise local.
+- **Address**: a list of hops (kind, decisions, optional encoded Message) from a start to a state. The lab's Model stores addresses, never atlas ids.
+- **Card / slot / home**: a card is a slot in the grid. Its home is its original state; it can be moved to other states. A pin is an extra slot.
 
 ### Layout
 
-| Path                           | Role                                                                                        |
-| ------------------------------ | ------------------------------------------------------------------------------------------- |
-| `src/lab/fixture.ts`           | `fixture`, `outcomes`, `Decision` schema                                                    |
-| `src/lab/identity.ts`          | Hash-consing: equal values share one canonical reference                                    |
-| `src/lab/atlas.ts`             | `Program`, `Setup`, `NextState`, transitions, `make`, addresses, `describe` (text snapshot) |
-| `src/lab/lab.ts`               | The lab as a Foldkit program (`makeLab(atlases)`)                                           |
-| `src/lab/lab.css`              | Lab styles inside `@layer components`                                                       |
-| `src/lab/entry.ts`, `lab.html` | Lab page (devtools off)                                                                     |
-| `src/programs.ts`              | Registers programs with `Atlas.make`                                                        |
-| `src/main.cases.ts`            | Weather cases (`src/main.ts` is the untouched template example)                             |
-| `src/release/`                 | Release deploy flow ported from Branch Lab's DeploymentPanel, plus its cases                |
-| `src/lab/*.atlas`              | Committed snapshots of every reachable state; their git diff is a behaviour diff            |
+| Path | Role |
+| --- | --- |
+| `src/lab/fixture.ts` | `fixture`, lazy `outcomes`, `Decision` schema |
+| `src/lab/identity.ts` | Hash-consing: equal execution values share canonical references |
+| `src/lab/canonical.ts` | Stable data keys for encoded Messages, Commands, and observations |
+| `src/lab/atlas.ts` | Program/Environment contracts, transitions, bounded exploration, properties, addresses, and text snapshots |
+| `src/lab/interactions.ts`, `src/lab/observation.ts` | Public Scene probing, structured screens, semantic action keys, and pending Command descriptions |
+| `src/lab/compare.ts` | Fresh before/after execution, event matching, grouped findings, limits, and replay |
+| `src/lab/lab.ts`, `src/lab/review.ts` | The gallery and comparison review Foldkit programs |
+| `src/lab/lab.css` | Lab styles inside `@layer components` |
+| `src/lab/entry.ts`, `lab.html` | Lab page, with devtools off |
+| `src/programs.ts`, `src/comparisons.ts` | Typed program/environment objects, atlas instances, and comparison examples |
+| `src/main.cases.ts`, `src/release/main.cases.ts`, `src/signup/main.cases.ts` | Starting inputs and next-step environments |
+| `src/signup/properties.ts`, `src/signup/variants.ts` | Signup invariants and deliberate comparison variants |
+| `src/lab/*.atlas` | Fixed-depth behavior snapshots; changes to execution context or explored prefixes affect their diffs |
 
-### How the atlas works
+### How exploration works
 
-- **Exploration.** Exploration is breadth-first in layers, memoized (`layerAt`). Successors are the outcomes of `setup.next(state)`, each applied through update. The generator chooses user Messages and pending Command answers; Signup offers every pending occurrence. Public Scene-derived interactions are an optional choice source, not a separate exploration path. The lab's Search control (`reach(depth, search)`) also offers depth-first, which revisits a state found on a shorter path so it reaches the breadth-first set at the same depth unless the budget runs out, and 32 seeded random walks of up to `depth` steps. A trace is the path on which a state was first found, so it can be longer than the shortest after a depth-first or random search; `check` stays breadth-first. See README for supported view-driven controls and scope limits.
-- **Merging.** A state is keyed by `identity.of([setup.next, setup.inputs, model, pending names and args])`. Setups that share behaviour references merge. So declare `next` at module scope unless they must close over a setup choice.
-- **Live clicks.** A click inside a card sends the Message through `atlas.send`, which validates it with `Schema.is(program.Message)` and records an `Event` hop.
-- **Budget.** `budget` (5,000) caps exploration. `reach().isComplete` is false when the budget is hit.
-- **Cost.** Identity cost is proportional to the objects `update` replaced, each at its own width. A changed 10,000-element array is still rescanned. Do not claim O(change).
+- **Initialization.** Environment starts yield Input. The real `program.start(input)` supplies Model and optional Commands; both are present at depth zero. Weather exports a pure `start(zipCodeInput)` and delegates runtime initialization to it. Release and Signup expose their existing pure `init` as Program.start.
+- **Exploration.** `reach(depth, search?, limitsOverride?)` supports breadth-first, depth-first, and 32 deterministic random walks. Successors come only from `environment.next(state)`. Signup offers every matching pending occurrence. Scene-derived interactions are an optional choice source, not a separate exploration path. Depth-first revisits shorter paths; random traversal can leave starts or branches unsampled. `check` always uses breadth-first paths.
+- **Merging.** Atlas identity is `identity.of([input, model, pending names and args])`. One atlas owns one fixed environment. Keeping Input in identity prevents equal current states with different future context from merging. Screen grouping is separate and never discards those executions. Comparison execution identity also retains the initial choice path.
+- **Live clicks.** `atlas.interact(id, message)` validates with the program Message schema and records an encoded `Event` hop. The exported `send(message)` still constructs an environment Move; it is not an atlas method.
+- **Limits.** `make` defaults to `{ states: 5_000, transitions: 50_000 }`. Both `reach` overrides and bounded `successors(id, limitsOverride?)` use absolute allowances, not an additional budget per call. A direct successor probe includes its source state in its local state count.
+- **Work accounting.** `reach().counters.transitions` counts all enumerated starting and next-step alternatives, even ones that merge. `counters.starts` is the starting subset; `counters.states` is the returned execution count. Sources retain iterators, yielded outcomes, and prepared arrivals. Resumption does not drop lookahead or reapply a buffered update.
+- **Status.** `reach().status` is `complete`, `depth-limit`, `state-limit`, or `transition-limit`. Exact work exhaustion can conservatively remain limited until another iterator step establishes completion. `unfinishedWork` reports unresolved starts, execution frontiers, and buffered arrivals; it does not estimate unknown generator cardinality.
+- **Passive reads.** `knownSuccessors(id)` never expands a source. `successorStatus(id)` distinguishes unseen, partial, and complete alternatives. `describe` and bounded property checking must not eagerly finish successor generators. Keep passive views on cached prefixes; use bounded successor probing for an explicit inspector action.
+- **Cost.** Limits bound admitted states and yielded alternatives, not process memory or arbitrary generator computation time. Caches persist across searches and live interactions. Identity cost is proportional to objects update replaced, each at its own width. A changed 10,000-element array is still rescanned. Do not claim O(change).
+
+### How comparison works
+
+`compare({ before, after, environment, properties?, limits })` takes two Programs with compatible Input and Message types/encodings and one Environment that can handle both Model types. It constructs fresh executions; never compare mutable gallery atlases or share their live interaction history.
+
+- Limits require `depth`, `states` per side, and `transitions`; `pairs` is optional and defaults to `states`. Status adds `pair-limit`. Total work counts each shared start once and each side's next-step alternatives separately.
+- `resume(limits)` retains iterators and buffered work. All limits must be nondecreasing; start a fresh comparison for smaller limits.
+- Match Moves by canonical encoded Message. Match Answers by Command name/arguments, occurrence among identical requests, and encoded response. DOM indexes and readable labels are not event identities. Reject duplicate semantic keys in one execution's environment.
+- Compare structured screen content, actions, pending Commands, newly issued Commands, available events, and properties. A different Model alone is not a UI finding. Keep concrete examples and shortest explored traces within grouped findings.
+- An unmatched event is applied on the side that offers it and its real successor is recorded. That branch stops immediately; never invent or explore a fake counterpart. Finish both event enumerations before declaring a missing event.
+- `replay(trace)` restarts both programs and replays recorded fixture decisions, then checks recorded events and evidence. Initial Commands and observations matter at depth zero.
+- No findings in an incomplete search is not equivalence. Complete always means complete for the declared environment and supported observations, not a liveness or universal UI proof.
 
 ### Conventions beyond FOLDKIT.md
 
@@ -77,15 +99,15 @@ bunx oxfmt src          # format
 
 ### Known issues
 
-- View-driven cases use the public Scene driver to record Messages from enabled buttons and configured text inputs. This is a limited probe, not universal interaction introspection; Mount-backed views are unsupported. Other examples choose explicit Messages in `next`.
+- View-driven environments use the public Scene driver to record Messages from enabled buttons and configured text inputs. This is a limited probe, not universal interaction introspection; Mount-backed views are unsupported. Other examples choose explicit Messages in `next`.
 - The Weather view hard-codes `id="location"`, so several Weather cards trigger Foldkit's duplicate-id warning.
 - A state's address is the trace by which it was first found. If a live click discovers a state before breadth-first search does, its address goes through an `Event` hop. It still resolves.
 - Command definitions don't expose their declared `messages` or argument schemas. Answers are validated against the program Message schema, not a per-Command result schema. The modeled environment must describe realistic responses; unique Command names are required. Interrupts and subscriptions are not automatically modeled.
 
 ### Directions discussed
 
-- **Invariants** over every reachable state. Built-in ones: dead buttons, dead ends, stuck spinners, double submit. They would report shortest counterexample traces, following the pattern in `src/lab/atlas.test.ts`.
-- **Diffing the explored state set** between commits (the `*.atlas` snapshots are the start of this). The output would read like "3 new states, 1 removed, 2 changed render".
-- **Grouping states by rendered accessibility tree**, with text-only screens for agents and screenshots only for groups that changed.
+- **Additional invariants** such as dead buttons, dead ends, and stuck spinners. Typed state/transition properties and shortest explored counterexamples already exist; these extra properties are not automatically implemented.
+- **Comparison across commits.** The paired Program comparison engine exists; automatic repository-version loading and CI review policy remain separate work.
+- **Computed accessibility or screenshot observations.** Structured rendered markup is available now; computed accessibility trees, browser layout, and screenshots are not part of the comparison contract.
 - **Pairwise coverage** across environment axes (viewport, locale, long strings) using a priority order.
 - **Quint conformance**: replay Quint ITF traces through the UI. See `~/research-ideas.md`.

@@ -1,23 +1,142 @@
-import { Array, Option } from 'effect'
+import { Array, Effect, Option, Schema } from 'effect'
+import { Command } from 'foldkit'
 import * as Scene from 'foldkit/scene'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
+import { signupEnvironment } from '../programs'
 import * as Signup from '../signup/main'
-import { SignupCases } from '../signup/main.cases'
 import { properties } from '../signup/properties'
-import { make } from './atlas'
+import { answer, describe, make, pendingRequests, send } from './atlas'
+import { fixture } from './fixture'
 import { Message, makeLab } from './lab'
 
+test.each([
+  { value: 0n, expected: '0n' },
+  { value: undefined, expected: 'undefined' },
+])(
+  'Explore can inspect and describe a $expected Model',
+  ({ value, expected }) => {
+    const atlas = make(
+      {
+        name: 'Data Model',
+        Model: Schema.Unknown,
+        Message: Schema.Number,
+        start: () => ({ model: value }),
+        update: model => ({ model }),
+        view: (_model, h) => h.p([], ['Preview']),
+      },
+      { *starts() {} },
+    )
+    const lab = makeLab([atlas])
+    Scene.scene(
+      lab,
+      Scene.given(lab.init().model),
+      Scene.tap(simulation => {
+        const model = Option.getOrThrow(
+          Scene.find(simulation.html, '.inspector-model'),
+        )
+        expect(Scene.textContent(model)).toContain(expected)
+      }),
+    )
+    expect(describe(atlas, 0)).toContain(expected)
+  },
+)
+
+test.each([false, true])(
+  'the inspector checks only declared properties (%s)',
+  hasProperties => {
+    const atlas = make(
+      {
+        name: 'Counter',
+        Model: Schema.Number,
+        Message: Schema.Number,
+        start: () => ({ model: 0 }),
+        update: model => ({ model }),
+        view: (_model, h) => h.p([], ['Preview']),
+      },
+      { *starts() {} },
+      {
+        properties: hasProperties
+          ? [{ name: 'Non-negative', state: ({ model }) => model >= 0 }]
+          : [],
+      },
+    )
+    const check = vi.fn(atlas.check)
+    const lab = makeLab([{ ...atlas, check }])
+    Scene.scene(lab, Scene.given(lab.init().model))
+    if (hasProperties) {
+      expect(check).toHaveBeenCalledWith(1)
+    } else {
+      expect(check).not.toHaveBeenCalled()
+    }
+  },
+)
+
+const ReadNumber = Command.define('ReadNumber', {
+  messages: [Schema.Number],
+  execute: Effect.die('Exploration must not execute Commands'),
+})
+
+test('a fixture-free Answer is shown as a Command reply and can be selected', () => {
+  const atlas = make(
+    {
+      name: 'Deterministic reply',
+      Model: Schema.Number,
+      Message: Schema.Number,
+      start: () => ({ model: 0, commands: [ReadNumber()] }),
+      update: (_model, message) => ({ model: message }),
+      view: (model, h) => h.p([], [String(model)]),
+    },
+    {
+      *starts() {},
+      *next(state) {
+        const request = Object.values(pendingRequests(state, ReadNumber))[0]
+        return request === undefined
+          ? send(yield* fixture<number>('done', {}))
+          : answer(request, 1)
+      },
+    },
+  )
+  const root = Option.getOrThrow(Array.head(atlas.reach(0).states))
+  const reply = Option.getOrThrow(Array.head(atlas.successors(root)))
+  const lab = makeLab([atlas])
+  Scene.scene(
+    lab,
+    Scene.given(lab.init().model),
+    Scene.tap(simulation => {
+      const inspector = Option.getOrThrow(
+        Scene.find(simulation.html, 'aside.inspector'),
+      )
+      expect(Scene.textContent(inspector)).toContain('replies with')
+      expect(Scene.textContent(inspector)).not.toContain('User actions')
+    }),
+    Scene.click(Scene.role('button', { name: `${reply.label} ${reply.to}` })),
+    Scene.tap(simulation => {
+      expect(
+        Scene.textContent(
+          Option.getOrThrow(
+            Scene.find(simulation.html, '.inspector-head strong'),
+          ),
+        ),
+      ).toBe(reply.to)
+      expect(atlas.pending(reply.to)).toEqual([])
+    }),
+  )
+})
+
 test('grouped gallery renders through Foldkit and interactions use selected execution', () => {
-  const atlas = make({
-    name: 'Signup',
-    Model: Signup.Model,
-    Message: Signup.Message,
-    update: Signup.update,
-    view: Signup.view,
-    cases: SignupCases,
-    properties,
-  })
+  const atlas = make(
+    {
+      name: 'Signup',
+      Model: Signup.Model,
+      Message: Signup.Message,
+      update: Signup.update,
+      view: Signup.view,
+      start: Signup.init,
+    },
+    signupEnvironment,
+    { properties },
+  )
   const lab = makeLab([atlas])
   const model = lab.update(
     lab.update(lab.init().model, Message.ClickedDeeper()).model,
@@ -58,20 +177,26 @@ test('grouped gallery renders through Foldkit and interactions use selected exec
     atlas.resolve(changed.positions[slot] ?? []),
   )
   const expected = Option.getOrThrow(
-    atlas.send(selected, Signup.Message.UpdatedUsername({ value: 'grace' })),
+    atlas.interact(
+      selected,
+      Signup.Message.UpdatedUsername({ value: 'grace' }),
+    ),
   )
   expect(destination).toBe(expected)
 })
 
 test('filters pinned cards by their displayed state', () => {
-  const atlas = make({
-    name: 'Signup',
-    Model: Signup.Model,
-    Message: Signup.Message,
-    update: Signup.update,
-    view: Signup.view,
-    cases: SignupCases,
-  })
+  const atlas = make(
+    {
+      name: 'Signup',
+      Model: Signup.Model,
+      Message: Signup.Message,
+      update: Signup.update,
+      view: Signup.view,
+      start: Signup.init,
+    },
+    signupEnvironment,
+  )
   const lab = makeLab([atlas])
   const home = Option.getOrThrow(
     Array.findFirst(atlas.reach(0).states, state =>
@@ -105,14 +230,17 @@ test('filters pinned cards by their displayed state', () => {
 })
 
 test('filters moved cards by their displayed response trace', () => {
-  const atlas = make({
-    name: 'Signup',
-    Model: Signup.Model,
-    Message: Signup.Message,
-    update: Signup.update,
-    view: Signup.view,
-    cases: SignupCases,
-  })
+  const atlas = make(
+    {
+      name: 'Signup',
+      Model: Signup.Model,
+      Message: Signup.Message,
+      update: Signup.update,
+      view: Signup.view,
+      start: Signup.init,
+    },
+    signupEnvironment,
+  )
   const lab = makeLab([atlas])
   const home = Option.getOrThrow(
     Array.findFirst(atlas.reach(0).states, state =>
@@ -125,7 +253,7 @@ test('filters moved cards by their displayed response trace', () => {
   )
 
   const checking = Option.getOrThrow(
-    atlas.send(home, Signup.Message.UpdatedUsername({ value: 'ada' })),
+    atlas.interact(home, Signup.Message.UpdatedUsername({ value: 'ada' })),
   )
   const free = Option.getOrThrow(
     Array.findFirst(
@@ -163,19 +291,22 @@ test('filters moved cards by their displayed response trace', () => {
 })
 
 test('keeps a moved card and its stable slot when only its displayed response matches', () => {
-  const atlas = make({
-    name: 'Signup',
-    Model: Signup.Model,
-    Message: Signup.Message,
-    update: Signup.update,
-    view: Signup.view,
-    cases: SignupCases,
-  })
+  const atlas = make(
+    {
+      name: 'Signup',
+      Model: Signup.Model,
+      Message: Signup.Message,
+      update: Signup.update,
+      view: Signup.view,
+      start: Signup.init,
+    },
+    signupEnvironment,
+  )
   const lab = makeLab([atlas])
   const home = Option.getOrThrow(Array.head(atlas.reach(0).states))
   const slot = atlas.key(home)
   const checking = Option.getOrThrow(
-    atlas.send(home, Signup.Message.UpdatedUsername({ value: 'ada' })),
+    atlas.interact(home, Signup.Message.UpdatedUsername({ value: 'ada' })),
   )
   const free = Option.getOrThrow(
     Array.findFirst(
@@ -217,14 +348,17 @@ test('keeps a moved card and its stable slot when only its displayed response ma
 })
 
 test('an unmoved group retains its slot when the filter selects a different member', () => {
-  const atlas = make({
-    name: 'Signup',
-    Model: Signup.Model,
-    Message: Signup.Message,
-    update: Signup.update,
-    view: Signup.view,
-    cases: SignupCases,
-  })
+  const atlas = make(
+    {
+      name: 'Signup',
+      Model: Signup.Model,
+      Message: Signup.Message,
+      update: Signup.update,
+      view: Signup.view,
+      start: Signup.init,
+    },
+    signupEnvironment,
+  )
   const lab = makeLab([atlas])
   const starts = atlas.reach(0).states
   const home = Option.getOrThrow(Array.head(starts))
@@ -254,14 +388,17 @@ test('an unmoved group retains its slot when the filter selects a different memb
 })
 
 test('previews contain only the app and Inspect selects the slot for replies', () => {
-  const atlas = make({
-    name: 'Signup',
-    Model: Signup.Model,
-    Message: Signup.Message,
-    update: Signup.update,
-    view: Signup.view,
-    cases: SignupCases,
-  })
+  const atlas = make(
+    {
+      name: 'Signup',
+      Model: Signup.Model,
+      Message: Signup.Message,
+      update: Signup.update,
+      view: Signup.view,
+      start: Signup.init,
+    },
+    signupEnvironment,
+  )
   const lab = makeLab([atlas])
   const group = Option.getOrThrow(
     Array.findFirst(
@@ -336,14 +473,17 @@ test('previews contain only the app and Inspect selects the slot for replies', (
 })
 
 test('the search control orders the gallery and survives a program switch', () => {
-  const atlas = make({
-    name: 'Signup',
-    Model: Signup.Model,
-    Message: Signup.Message,
-    update: Signup.update,
-    view: Signup.view,
-    cases: SignupCases,
-  })
+  const atlas = make(
+    {
+      name: 'Signup',
+      Model: Signup.Model,
+      Message: Signup.Message,
+      update: Signup.update,
+      view: Signup.view,
+      start: Signup.init,
+    },
+    signupEnvironment,
+  )
   const lab = makeLab([atlas])
   Scene.scene(
     lab,
@@ -368,15 +508,18 @@ test('the search control orders the gallery and survives a program switch', () =
 })
 
 test('property evidence names BFS and depth even with a random gallery', () => {
-  const atlas = make({
-    name: 'Signup',
-    Model: Signup.Model,
-    Message: Signup.Message,
-    update: Signup.update,
-    view: Signup.view,
-    cases: SignupCases,
-    properties,
-  })
+  const atlas = make(
+    {
+      name: 'Signup',
+      Model: Signup.Model,
+      Message: Signup.Message,
+      update: Signup.update,
+      view: Signup.view,
+      start: Signup.init,
+    },
+    signupEnvironment,
+    { properties },
+  )
   const lab = makeLab([atlas])
   Scene.scene(
     lab,

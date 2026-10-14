@@ -1,5 +1,5 @@
 import { Array, Option, Record, Schema, pipe } from 'effect'
-import type { Update } from 'foldkit'
+import { Update } from 'foldkit'
 import {
   type Document,
   type Html,
@@ -10,10 +10,13 @@ import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 
 import { Address, type Atlas, Search, type Step } from './atlas'
+import { formatValue } from './display'
+import * as Review from './review'
 
 // MODEL
 
 const Pin = Schema.Struct({ slot: Schema.String, address: Address })
+const Mode = Schema.Literals(['Explore', 'Compare'])
 
 export const Model = Schema.Struct({
   program: Schema.String,
@@ -24,6 +27,8 @@ export const Model = Schema.Struct({
   positions: Schema.Record(Schema.String, Address),
   pins: Schema.Array(Pin),
   maybeSelected: Schema.Option(Schema.String),
+  mode: Mode,
+  review: Review.Model,
 })
 export type Model = typeof Model.Type
 
@@ -45,6 +50,8 @@ const fresh = (program: string, search: Search = 'breadth'): Model => ({
   positions: {},
   pins: [],
   maybeSelected: Option.none(),
+  mode: 'Explore',
+  review: Review.initial(),
 })
 
 const isMatching = (
@@ -63,6 +70,8 @@ const isMatching = (
 // MESSAGE
 
 export const Message = defineMessageUnion({
+  SelectedMode: { mode: Mode },
+  GotReviewMessage: { message: Review.Message },
   SelectedProgram: { program: Schema.String },
   SelectedFilter: { fixture: Schema.String, option: Schema.String },
   ClearedFilter: { fixture: Schema.String },
@@ -146,7 +155,9 @@ const depthView = (model: Model, atlas: Atlas, h: HtmlBuilder<Message>): Html =>
       h.button(
         [
           h.AriaLabel('More steps'),
-          h.Disabled(atlas.reach(model.depth, model.search).isComplete),
+          h.Disabled(
+            atlas.reach(model.depth, model.search).status !== 'depth-limit',
+          ),
           h.OnClick(Message.ClickedDeeper()),
         ],
         ['+'],
@@ -304,6 +315,24 @@ const destinationView = (
     ? h.span([h.Class('row-state is-same')], ['no change'])
     : h.span([h.Class('row-state')], [step.to])
 
+const nextRow = (
+  slot: string,
+  current: string,
+  step: Step,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.button(
+    [
+      h.Class('row'),
+      h.AriaLabel(`${step.label} ${step.to}`),
+      h.OnClick(Message.ClickedStep({ slot, state: step.to })),
+    ],
+    [
+      h.span([h.Class('row-label')], [step.label]),
+      destinationView(step, current, h),
+    ],
+  )
+
 type Branch = Readonly<{
   depth: number
   decision: Step['decisions'][number]
@@ -370,32 +399,38 @@ const answersView = (
 ): Html =>
   h.div(
     [h.Class('tree')],
-    Array.map(
-      branchesOf(
-        Array.map(steps, step => ({ options: optionsOf(step), step })),
-        0,
+    [
+      ...Array.map(
+        Array.filter(steps, step => Array.isReadonlyArrayEmpty(step.decisions)),
+        step => nextRow(slot, current, step, h),
       ),
-      ({ depth, decision, maybeStep }) => {
-        const label = [
-          h.span([h.Class('tree-key')], [decision.fixture]),
-          h.span([h.Class('tree-value')], [decision.option]),
-        ]
-        const style = h.Style({ '--depth': `${depth}` })
-        return Option.match(maybeStep, {
-          onNone: () => h.div([h.Class('tree-row'), style], label),
-          onSome: step =>
-            h.button(
-              [
-                h.Class('tree-row is-leaf'),
-                style,
-                h.AriaLabel(`${step.label} ${step.to}`),
-                h.OnClick(Message.ClickedStep({ slot, state: step.to })),
-              ],
-              [...label, destinationView(step, current, h)],
-            ),
-        })
-      },
-    ),
+      ...Array.map(
+        branchesOf(
+          Array.map(steps, step => ({ options: optionsOf(step), step })),
+          0,
+        ),
+        ({ depth, decision, maybeStep }) => {
+          const label = [
+            h.span([h.Class('tree-key')], [decision.fixture]),
+            h.span([h.Class('tree-value')], [decision.option]),
+          ]
+          const style = h.Style({ '--depth': `${depth}` })
+          return Option.match(maybeStep, {
+            onNone: () => h.div([h.Class('tree-row'), style], label),
+            onSome: step =>
+              h.button(
+                [
+                  h.Class('tree-row is-leaf'),
+                  style,
+                  h.AriaLabel(`${step.label} ${step.to}`),
+                  h.OnClick(Message.ClickedStep({ slot, state: step.to })),
+                ],
+                [...label, destinationView(step, current, h)],
+              ),
+          })
+        },
+      ),
+    ],
   )
 
 const nextView = (
@@ -404,12 +439,8 @@ const nextView = (
   steps: ReadonlyArray<Step>,
   h: HtmlBuilder<Message>,
 ): ReadonlyArray<Html> => {
-  const moves = Array.filter(steps, step =>
-    Array.isReadonlyArrayEmpty(optionsOf(step)),
-  )
-  const answers = Array.filter(steps, step =>
-    Array.isReadonlyArrayNonEmpty(optionsOf(step)),
-  )
+  const moves = Array.filter(steps, step => step.kind === 'Move')
+  const answers = Array.filter(steps, step => step.kind === 'Answer')
   return [
     ...(Array.isReadonlyArrayNonEmpty(moves)
       ? [
@@ -417,19 +448,7 @@ const nextView = (
             [h.Class('next-group')],
             [
               h.div([h.Class('next-title')], ['User actions']),
-              ...Array.map(moves, step =>
-                h.button(
-                  [
-                    h.Class('row'),
-                    h.AriaLabel(`${step.label} ${step.to}`),
-                    h.OnClick(Message.ClickedStep({ slot, state: step.to })),
-                  ],
-                  [
-                    h.span([h.Class('row-label')], [step.label]),
-                    destinationView(step, current, h),
-                  ],
-                ),
-              ),
+              ...Array.map(moves, step => nextRow(slot, current, step, h)),
             ],
           ),
         ]
@@ -474,9 +493,9 @@ const tokenKind = (parts: ReadonlyArray<string>, index: number): string => {
 }
 
 // NOTE: Splitting on a capturing pattern alternates text and tokens, so odd
-// parts are tokens. Objects holding only a tag fit on one line.
+// parts are tokens.
 const modelView = (value: unknown, h: HtmlBuilder<Message>): Html => {
-  const parts = JSON.stringify(value, null, 2)
+  const parts = formatValue(value, 2)
     .replace(/\{\n\s*("_tag": "[^"]*")\n\s*\}/g, '{ $1 }')
     .split(JSON_TOKEN)
   return h.pre(
@@ -528,10 +547,18 @@ const inspectorView = (
   search: Search,
   h: HtmlBuilder<Message>,
 ): Html => {
-  const failures = atlas.check(depth)
-  const { isComplete } = atlas.reach(depth, search)
+  const failures = Array.isReadonlyArrayEmpty(atlas.propertyNames)
+    ? []
+    : atlas.check(depth)
+  const reached = atlas.reach(depth, search)
+  const isComplete = reached.status === 'complete'
   const trace = atlas.trace(card.state)
   const distance = trace.length - 1
+  const next = atlas.successors(card.state)
+  const nextHint =
+    atlas.successorStatus(card.state) === 'complete'
+      ? 'Click one to step this preview there.'
+      : 'Showing explored choices. More alternatives remain unknown at the current search limits.'
   return h.aside(
     [h.Class('inspector'), h.AriaLabel('Selected state')],
     [
@@ -599,8 +626,8 @@ const inspectorView = (
       inspectorSection(
         'next',
         'What can happen next',
-        'Click one to step this preview there.',
-        nextView(card.slot, card.state, atlas.successors(card.state), h),
+        nextHint,
+        nextView(card.slot, card.state, next, h),
         h,
       ),
       card.states.length > 1
@@ -710,7 +737,7 @@ const inspectorView = (
           h.p(
             [],
             [
-              `Depth ${depth}; exploration threshold ${atlas.budget} states; ${isComplete ? 'complete within declared environment' : 'incomplete'}.`,
+              `Depth ${depth}; limits ${atlas.limits.states} states and ${atlas.limits.transitions} alternatives; ${isComplete ? 'complete within declared environment' : reached.status}.`,
             ],
           ),
           h.p([], [atlas.grouping]),
@@ -729,7 +756,18 @@ const inspectorView = (
 
 // LAB
 
-export const makeLab = (atlases: Array.NonEmptyReadonlyArray<Atlas>) => {
+export const makeLab = (
+  atlases: Array.NonEmptyReadonlyArray<Atlas>,
+  comparisons: ReadonlyArray<Review.ComparisonCase> = [],
+) => {
+  const review = Review.makeReview(comparisons)
+  const foldReview = Update.foldChild({
+    update: review.update,
+    read: (model: Model) => Option.some(model.review),
+    write: (model, nextReview) =>
+      modifyFields(model, { review: () => nextReview }),
+    toParentMessage: message => Message.GotReviewMessage({ message }),
+  })
   const atlasOf = (model: Model): Atlas =>
     Option.getOrElse(
       Array.findFirst(atlases, atlas => atlas.name === model.program),
@@ -795,6 +833,11 @@ export const makeLab = (atlases: Array.NonEmptyReadonlyArray<Atlas>) => {
 
   const update = (model: Model, message: Message) =>
     Message.match<Update.Return<Model, Message>>(message, {
+      SelectedMode: ({ mode }) => ({
+        model: modifyFields(model, { mode: () => mode }),
+      }),
+      GotReviewMessage: ({ message: reviewMessage }) =>
+        foldReview(model, reviewMessage),
       SelectedProgram: ({ program }) => ({
         model: fresh(program, model.search),
       }),
@@ -826,7 +869,7 @@ export const makeLab = (atlases: Array.NonEmptyReadonlyArray<Atlas>) => {
         model: modifyFields(model, { maybeSelected: () => Option.some(slot) }),
       }),
       InteractedWithCase: ({ slot, state, message: caseMessage }) =>
-        Option.match(atlasOf(model).send(state, caseMessage), {
+        Option.match(atlasOf(model).interact(state, caseMessage), {
           onNone: () => ({ model }),
           onSome: next => ({ model: moveTo(model, slot, next) }),
         }),
@@ -853,6 +896,22 @@ export const makeLab = (atlases: Array.NonEmptyReadonlyArray<Atlas>) => {
 
   // VIEW
 
+  const modeView = (model: Model, h: HtmlBuilder<Message>): Html =>
+    Array.isReadonlyArrayEmpty(comparisons)
+      ? h.empty
+      : h.div(
+          [h.Class('lab-search'), h.Role('group'), h.AriaLabel('Mode')],
+          Array.map(Mode.literals, mode =>
+            h.button(
+              [
+                h.AriaPressed(model.mode === mode ? 'true' : 'false'),
+                h.OnClick(Message.SelectedMode({ mode })),
+              ],
+              [mode],
+            ),
+          ),
+        )
+
   const programView = (model: Model, h: HtmlBuilder<Message>): Html =>
     h.select(
       [
@@ -870,10 +929,12 @@ export const makeLab = (atlases: Array.NonEmptyReadonlyArray<Atlas>) => {
     atlas: Atlas,
     cards: ReadonlyArray<Card>,
     h: HtmlBuilder<Message>,
-  ): Html =>
-    h.header(
+  ): Html => {
+    const reached = atlas.reach(model.depth, model.search)
+    return h.header(
       [h.Class('lab-header')],
       [
+        modeView(model, h),
         programView(model, h),
         h.div(
           [h.Class('lab-filters')],
@@ -887,7 +948,7 @@ export const makeLab = (atlases: Array.NonEmptyReadonlyArray<Atlas>) => {
             h.span(
               [h.Class('lab-count')],
               [
-                `${cards.length} groups · ${atlas.reach(model.depth, model.search).states.length} states · ${atlas.reach(model.depth, model.search).isComplete ? 'complete' : 'incomplete'}`,
+                `${cards.length} groups · ${reached.states.length} states · ${reached.status === 'complete' ? 'complete' : `incomplete · ${reached.status}`}`,
               ],
             ),
             searchView(model, h),
@@ -900,8 +961,21 @@ export const makeLab = (atlases: Array.NonEmptyReadonlyArray<Atlas>) => {
         ),
       ],
     )
+  }
 
   const view = (model: Model, h: HtmlBuilder<Message>): Document => {
+    if (model.mode === 'Compare') {
+      return {
+        title: 'Compare UI versions',
+        body: h.submodel({
+          slotId: 'comparison-review',
+          model: model.review,
+          view: review.view,
+          viewInputs: { mode: () => modeView(model, h) },
+          toParentMessage: message => Message.GotReviewMessage({ message }),
+        }),
+      }
+    }
     const atlas = atlasOf(model)
     const cards = cardsOf(model, atlas)
     const maybeSelected = Option.orElse(

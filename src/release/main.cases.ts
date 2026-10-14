@@ -2,8 +2,8 @@ import { Array, Option } from 'effect'
 import { AsyncData } from 'foldkit'
 
 import {
+  type Environment,
   type NextState,
-  type Setup,
   type Transition,
   answer,
   pendingRequests,
@@ -21,7 +21,6 @@ import {
   Submission,
   Target,
   blockerOf,
-  init,
 } from './main'
 
 const passed: ReadonlyArray<Check> = [
@@ -148,6 +147,11 @@ function* next(state: NextState<Model, Message>): Choices<Transition<Message>> {
   )
 }
 
-export function* ReleaseCases(): Choices<Setup<Model, Message>> {
-  return { ...init(), next }
+export function* ReleaseStarts(): Choices<void> {
+  return
+}
+
+export const releaseEnvironment: Environment<Model, Message> = {
+  starts: ReleaseStarts,
+  next,
 }

@@ -74,12 +74,14 @@ export const update = (model: Model, message: Message) =>
 
 // INIT
 
-export const init: Runtime.ApplicationInit<Model, Message> = () => ({
+export const start = (zipCodeInput: string): Update.Return<Model, Message> => ({
   model: {
-    zipCodeInput: '',
+    zipCodeInput,
     weather: WeatherAsyncData.Idle(),
   },
 })
+
+export const init: Runtime.ApplicationInit<Model, Message> = () => start('')
 
 // COMMAND
 

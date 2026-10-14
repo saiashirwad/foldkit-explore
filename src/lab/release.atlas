@@ -1,5 +1,5 @@
 # Release · depth 12 · 25 states · complete
-# Transitions: next(state); exploration threshold: 5000 states
+# Transitions: next(state); limits: 5000 states, 50000 alternatives (including starts)
 
 S1  start
     {"release":{"_tag":"Loading"},"submission":{"_tag":"Reviewing"}}
