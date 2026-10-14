@@ -7,6 +7,7 @@ import { dataPath, dataShape, unsupportedData } from './execution-data'
 export type Identity = Readonly<{
   of: (value: unknown, path?: string) => unknown
   size: () => number
+  clear: () => void
 }>
 
 type Entries = ReadonlyArray<readonly [string, unknown, boolean]>
@@ -116,5 +117,12 @@ export const makeIdentity = (): Identity => {
   const size = () =>
     Array.reduce(buckets.values(), 0, (total, bucket) => total + bucket.length)
 
-  return { of, size }
+  return {
+    of,
+    size,
+    clear: () => {
+      buckets.clear()
+      ancestors.clear()
+    },
+  }
 }

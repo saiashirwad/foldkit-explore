@@ -15,14 +15,14 @@ import {
 } from './atlas'
 import { canonical, ownDataEntries } from './canonical'
 import { formatValue } from './display'
+import { InvalidModelError } from './execution-error'
 import {
   type Choices,
   type Decision,
   type EnumerationStep,
   type Outcome,
   enumerate,
-  outcomes,
-  replay,
+  replaySteps as replayChoicesSteps,
 } from './fixture'
 import { isStructural, makeIdentity } from './identity'
 import { inspect } from './interactions'
@@ -37,7 +37,7 @@ import {
 
 export type ComparisonSide = 'before' | 'after'
 
-export type ComparisonStatus = ReachStatus | 'pair-limit'
+export type ComparisonStatus = ReachStatus | 'pair-limit' | 'running'
 
 // NOTE: States are capped independently on each side. The pair cap defaults
 // to the state cap. Transitions count a shared start once and every consumed
@@ -153,7 +153,11 @@ export type Comparison = Readonly<{
   propertyFailures: ReadonlyArray<PropertyFailure>
   unfinishedWork: ReadonlyArray<UnfinishedComparisonWork>
   resume: (limits: ComparisonLimits) => Comparison
+  setLimits: (limits: ComparisonLimits) => void
+  advance: (steps: number) => boolean
+  dispose: () => void
   replay: (trace: ComparisonTrace) => ComparisonTrace
+  replaySteps: (trace: ComparisonTrace) => Generator<void, ComparisonTrace>
   render: <ParentMessage>(
     side: ComparisonSide,
     example: ComparisonExample,
@@ -349,19 +353,6 @@ const enumeration = <Message>(): Enumeration<Message> => ({
   events: new Map(),
 })
 
-const replayChoices = <Output>(
-  choices: () => Choices<Output>,
-  decisions: ReadonlyArray<Decision>,
-): Output => {
-  const result = replay(choices, decisions)
-  if (!result.done) {
-    throw new Error(
-      'Comparison replay ended before its environment choices were complete.',
-    )
-  }
-  return result.value
-}
-
 const normalizedLimits = (
   limits: ComparisonLimits,
 ): Required<ComparisonLimits> => ({
@@ -375,14 +366,34 @@ const normalizedLimits = (
   ),
 })
 
+export type ComparisonOptions<
+  BeforeModel,
+  AfterModel,
+  Message,
+  Input = void,
+> = Readonly<{
+  before: Program<BeforeModel, Message, Input>
+  after: Program<AfterModel, Message, Input>
+  environment: Environment<BeforeModel | AfterModel, Message, Input>
+  properties?: ReadonlyArray<Property<BeforeModel | AfterModel, Message>>
+  limits: ComparisonLimits
+}>
+
 export const compare = <BeforeModel, AfterModel, Message, Input = void>(
-  options: Readonly<{
-    before: Program<BeforeModel, Message, Input>
-    after: Program<AfterModel, Message, Input>
-    environment: Environment<BeforeModel | AfterModel, Message, Input>
-    properties?: ReadonlyArray<Property<BeforeModel | AfterModel, Message>>
-    limits: ComparisonLimits
-  }>,
+  options: ComparisonOptions<BeforeModel, AfterModel, Message, Input>,
+): Comparison => {
+  const comparison = createComparison(options)
+  comparison.resume(options.limits)
+  return comparison
+}
+
+export const createComparison = <
+  BeforeModel,
+  AfterModel,
+  Message,
+  Input = void,
+>(
+  options: ComparisonOptions<BeforeModel, AfterModel, Message, Input>,
 ): Comparison => {
   const { environment } = options
   const properties = options.properties ?? []
@@ -444,7 +455,7 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
     ): Prepared<Model, Message, Input> => {
       identity.of(model, `${program.name}.model`)
       if (!isModel(model)) {
-        throw new Error(
+        throw new InvalidModelError(
           `${program.name}: start or update returned an invalid Model.`,
         )
       }
@@ -654,7 +665,7 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
   }
   const transitions = () =>
     work.starts + work.beforeTransitions + work.afterTransitions
-  const stopped: { status: ComparisonStatus } = { status: 'complete' }
+  const stopped: { status: ComparisonStatus } = { status: 'running' }
   const starts = enumerate(environment.starts)
   const startBuffer: {
     value:
@@ -1262,7 +1273,10 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
       progress.running = advance()
     }
   }
-  const replay = (trace: ComparisonTrace): ComparisonTrace => {
+  const replaySteps = function* (
+    trace: ComparisonTrace,
+  ): Generator<void, ComparisonTrace> {
+    assertOpen()
     const first = trace[0]
     if (first === undefined || first.kind !== 'Start') {
       throw new Error('A comparison trace must begin with a shared start.')
@@ -1270,7 +1284,10 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
     const replayCache: InspectionCache = new Map()
     const replayBefore = makeRuntime(options.before, 'RB', replayCache)
     const replayAfter = makeRuntime(options.after, 'RA', replayCache)
-    const input = replayChoices(environment.starts, first.startDecisions)
+    const input = yield* replayChoicesSteps(
+      environment.starts,
+      first.startDecisions,
+    )
     const before = replayBefore.start(input, first.startDecisions)
     const after = replayAfter.start(input, first.startDecisions)
     replayBefore.nodes.set(before.node.key, before.node)
@@ -1290,11 +1307,11 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
       before: Node<BeforeModel, Message, Input> | undefined
       after: Node<AfterModel, Message, Input> | undefined
     } = { before: before.node, after: after.node }
-    const replayEvent = <Model extends BeforeModel | AfterModel>(
+    const replayEvent = function* <Model extends BeforeModel | AfterModel>(
       runtime: ReturnType<typeof makeRuntime<Model>>,
       node: Node<Model, Message, Input> | undefined,
       event: ComparisonEvent | undefined,
-    ): Prepared<Model, Message, Input> | undefined => {
+    ): Generator<void, Prepared<Model, Message, Input> | undefined> {
       if (event === undefined) {
         return undefined
       }
@@ -1305,7 +1322,7 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
       if (next === undefined) {
         throw new Error('Comparison replay found no environment events.')
       }
-      const transition = replayChoices(next, event.decisions)
+      const transition = yield* replayChoicesSteps(next, event.decisions)
       const selected = runtime.event(node, {
         decisions: event.decisions,
         value: transition,
@@ -1322,11 +1339,11 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
       runtime.nodes.set(replayed.node.key, replayed.node)
       return replayed
     }
-    const verifyMissing = <Model extends BeforeModel | AfterModel>(
+    const verifyMissing = function* <Model extends BeforeModel | AfterModel>(
       runtime: ReturnType<typeof makeRuntime<Model>>,
       node: Node<Model, Message, Input> | undefined,
       offered: ComparisonEvent,
-    ) => {
+    ): Generator<void, void> {
       if (node === undefined) {
         throw new Error('Comparison replay cannot verify an unmatched side.')
       }
@@ -1334,14 +1351,19 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
       if (next === undefined) {
         return
       }
-      let examined = 0
-      for (const candidate of outcomes(next)) {
-        if (examined >= work.limits.transitions) {
+      const count = { examined: 0 }
+      for (const checkpoint of enumerate(next)) {
+        yield
+        if (checkpoint.kind === 'work') {
+          continue
+        }
+        const candidate = checkpoint.outcome
+        if (count.examined >= work.limits.transitions) {
           throw new Error(
             'Comparison replay cannot verify a missing event within its transition limit.',
           )
         }
-        examined += 1
+        count.examined += 1
         if (runtime.event(node, candidate).evidence.key === offered.key) {
           throw new Error(
             'Comparison replay diverged: a previously missing event is now available.',
@@ -1349,7 +1371,8 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
         }
       }
     }
-    Array.forEach(trace.slice(1), (frame, index) => {
+    for (const [index, frame] of trace.slice(1).entries()) {
+      yield
       if (frame.kind !== 'Transition') {
         throw new Error('Comparison replay found an unexpected starting frame.')
       }
@@ -1359,7 +1382,7 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
             'Comparison replay requires unmatched events to be terminal.',
           )
         }
-        verifyMissing(replayAfter, current.after, frame.beforeEvent)
+        yield* verifyMissing(replayAfter, current.after, frame.beforeEvent)
       }
       if (frame.afterEvent !== undefined && frame.beforeEvent === undefined) {
         if (index !== trace.length - 2) {
@@ -1367,14 +1390,14 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
             'Comparison replay requires unmatched events to be terminal.',
           )
         }
-        verifyMissing(replayBefore, current.before, frame.afterEvent)
+        yield* verifyMissing(replayBefore, current.before, frame.afterEvent)
       }
-      const replayedBefore = replayEvent(
+      const replayedBefore = yield* replayEvent(
         replayBefore,
         current.before,
         frame.beforeEvent,
       )
-      const replayedAfter = replayEvent(
+      const replayedAfter = yield* replayEvent(
         replayAfter,
         current.after,
         frame.afterEvent,
@@ -1392,8 +1415,9 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
         beforeIssued: replayedBefore?.issued ?? [],
         afterIssued: replayedAfter?.issued ?? [],
       })
-    })
-    Array.forEach(frames, (frame, index) => {
+    }
+    for (const [index, frame] of frames.entries()) {
+      yield
       const expected = trace[index]
       if (
         expected === undefined ||
@@ -1410,8 +1434,38 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
           'Comparison replay diverged from its recorded execution.',
         )
       }
-    })
+    }
     return frames
+  }
+  const replay = (trace: ComparisonTrace): ComparisonTrace => {
+    const iterator = replaySteps(trace)
+    const cursor = { step: iterator.next() }
+    while (!cursor.step.done) {
+      cursor.step = iterator.next()
+    }
+    return cursor.step.value
+  }
+  const lifecycle = { disposed: false }
+  const assertOpen = () => {
+    if (lifecycle.disposed) {
+      throw new Error('Comparison session is disposed.')
+    }
+  }
+  const setLimits = (limits: ComparisonLimits) => {
+    assertOpen()
+    const next = normalizedLimits(limits)
+    if (
+      next.depth < work.limits.depth ||
+      next.states < work.limits.states ||
+      next.transitions < work.limits.transitions ||
+      next.pairs < work.limits.pairs ||
+      next.enumerationWork < work.limits.enumerationWork
+    ) {
+      throw new Error(
+        'Comparison resume limits cannot decrease; start a fresh comparison for smaller limits.',
+      )
+    }
+    work.limits = next
   }
   const comparison: Comparison = {
     name: `${options.before.name} → ${options.after.name}`,
@@ -1465,24 +1519,62 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
       })
       return pending
     },
-    resume: limits => {
-      const next = normalizedLimits(limits)
-      if (
-        next.depth < work.limits.depth ||
-        next.states < work.limits.states ||
-        next.transitions < work.limits.transitions ||
-        next.pairs < work.limits.pairs ||
-        next.enumerationWork < work.limits.enumerationWork
-      ) {
-        throw new Error(
-          'Comparison resume limits cannot decrease; start a fresh comparison for smaller limits.',
-        )
+    setLimits,
+    advance: steps => {
+      assertOpen()
+      limit(steps, 'Chunk size')
+      stopped.status = 'complete'
+      const cursor = { remaining: steps }
+      while (cursor.remaining > 0) {
+        if (!advance()) {
+          return true
+        }
+        cursor.remaining -= 1
       }
-      work.limits = next
+      stopped.status = 'running'
+      return false
+    },
+    dispose: () => {
+      if (lifecycle.disposed) {
+        return
+      }
+      lifecycle.disposed = true
+      const iterators = [
+        starts,
+        ...Array.flatMap(queue, pair => [
+          pair.beforeEvents.iterator,
+          pair.afterEvents.iterator,
+        ]),
+      ]
+      const errors = Array.flatMap(iterators, iterator => {
+        try {
+          iterator?.return?.()
+          return []
+        } catch (error) {
+          return [error]
+        }
+      })
+      queue.length = 0
+      pairs.clear()
+      beforeRuntime.nodes.clear()
+      afterRuntime.nodes.clear()
+      grouped.clear()
+      failures.length = 0
+      inspectionCache.clear()
+      screenDeltas.clear()
+      startBuffer.value = undefined
+      identity.clear()
+      if (Array.isArrayNonEmpty(errors)) {
+        throw new AggregateError(errors, 'Comparison cleanup failed.')
+      }
+    },
+    resume: limits => {
+      setLimits(limits)
       run()
       return comparison
     },
     replay,
+    replaySteps,
     render: (side, example, traceIndex, slot, h, toParentMessage) => {
       const frame = example.trace[traceIndex]
       return side === 'before'
@@ -1490,6 +1582,5 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
         : afterRuntime.render(frame?.after, slot, h, toParentMessage)
     },
   }
-  run()
   return comparison
 }

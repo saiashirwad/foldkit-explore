@@ -50,6 +50,42 @@ export const replay = <Output>(
   })
 }
 
+// NOTE: Selected-decision replay never visits sibling paths and closes the
+// authored generator when the caller cancels between advancement checkpoints.
+export function* replaySteps<Output>(
+  choices: () => Choices<Output>,
+  decisions: ReadonlyArray<Decision>,
+): Generator<void, Output> {
+  const generator: Iterator<Fixture, Output, unknown> = choices()
+  try {
+    yield
+    const cursor = { step: generator.next(), index: 0 }
+    while (!cursor.step.done && cursor.index < decisions.length) {
+      const decision = decisions[cursor.index]
+      if (
+        decision === undefined ||
+        cursor.step.value.name !== decision.fixture ||
+        !Object.hasOwn(cursor.step.value.cases, decision.option)
+      ) {
+        throw new Error(
+          'Fixture replay diverged; choices must be deterministic.',
+        )
+      }
+      yield
+      cursor.step = generator.next(cursor.step.value.cases[decision.option])
+      cursor.index += 1
+    }
+    if (!cursor.step.done || cursor.index !== decisions.length) {
+      throw new Error(
+        'Fixture replay ended before its environment choices were complete.',
+      )
+    }
+    return cursor.step.value
+  } finally {
+    generator.return?.()
+  }
+}
+
 export type EnumerationStep<Output> =
   | Readonly<{ kind: 'work' }>
   | Readonly<{ kind: 'outcome'; outcome: Outcome<Output> }>

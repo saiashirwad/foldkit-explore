@@ -3,13 +3,16 @@ import type { Update } from 'foldkit'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 import { defineView } from 'foldkit/submodel'
 
+import { canonical } from './canonical'
 import { formatValue } from './display'
+import { InvalidModelError } from './execution-error'
 import {
   type Choices,
   Decision,
   type EnumerationStep,
   type Outcome,
   enumerate,
+  replaySteps as replayChoicesSteps,
 } from './fixture'
 import { makeIdentity } from './identity'
 import { type InputDomain, inspect } from './interactions'
@@ -154,9 +157,39 @@ const isSameHop = (left: Hop, right: Hop): boolean =>
     )
   })
 
+const isSameAddress = (trace: ReadonlyArray<Hop>, address: Address): boolean =>
+  trace.length === address.length &&
+  trace.every((hop, index) => {
+    const other = address[index]
+    return (
+      other !== undefined &&
+      isSameHop(hop, other) &&
+      canonical(hop.maybeMessage) === canonical(other.maybeMessage)
+    )
+  })
+
 // ATLAS
 
-export type Step = Hop & Readonly<{ label: string; to: string }>
+export const StepSnapshot = Schema.Struct({
+  ...Hop.fields,
+  label: Schema.String,
+  to: Schema.String,
+})
+export type Step = typeof StepSnapshot.Type
+export const StateSnapshot = Schema.Struct({
+  id: Schema.String,
+  model: Schema.Unknown,
+  encodedModel: Schema.Unknown,
+  address: Address,
+  key: Schema.String,
+  trace: Schema.Array(StepSnapshot),
+  pending: Schema.Array(
+    Schema.Struct({ name: Schema.String, args: Schema.String }),
+  ),
+  next: Schema.Array(StepSnapshot),
+  successorStatus: Schema.Literals(['unseen', 'partial', 'complete']),
+})
+export type StateSnapshot = typeof StateSnapshot.Type
 export type ReachStatus =
   | 'complete'
   | 'depth-limit'
@@ -198,7 +231,14 @@ export type Atlas = Readonly<{
   limits: ExplorationLimits
   propertyNames: ReadonlyArray<string>
   check: (depth: number, limits?: Limits) => ReadonlyArray<Violation>
+  checkSteps: (
+    depth: number,
+    limits?: Limits,
+  ) => Generator<void, ReadonlyArray<Violation>>
   groups: (states: ReadonlyArray<string>) => ReadonlyArray<Group>
+  groupSteps: (
+    states: ReadonlyArray<string>,
+  ) => Generator<void, ReadonlyArray<Group>>
   grouping: string
   reach: (depth: number, search?: Search, limits?: Limits) => Reach
   describe: (depth: number) => string
@@ -211,6 +251,7 @@ export type Atlas = Readonly<{
   address: (state: string) => Address
   key: (state: string) => string
   resolve: (address: Address) => Option.Option<string>
+  resolveSteps: (address: Address) => Generator<void, Option.Option<string>>
   pending: (state: string) => ReadonlyArray<PendingCommand>
   encode: (state: string) => unknown
   fixtures: () => ReadonlyArray<FixtureOptions>
@@ -221,6 +262,25 @@ export type Atlas = Readonly<{
     toParentMessage: (message: unknown) => ParentMessage,
   ) => Html
   nodes: () => number
+  fresh: () => Atlas
+  dispose: () => void
+  explore: (
+    depth: number,
+    search?: Search,
+    limits?: Limits,
+  ) => Generator<void, Reach>
+  probe: (
+    state: string,
+    limits?: Limits,
+  ) => Generator<void, ReadonlyArray<Step>>
+  snapshot: () => ReadonlyArray<StateSnapshot>
+  snapshotSteps: () => Generator<void, ReadonlyArray<StateSnapshot>>
+  renderModel: <ParentMessage>(
+    model: unknown,
+    slot: string,
+    h: HtmlBuilder<ParentMessage>,
+    toParentMessage: (message: unknown) => ParentMessage,
+  ) => Html
 }>
 
 type Node<Model, Message, Input> = State<Model, Message> &
@@ -345,6 +405,7 @@ export const make = <Model, Message, Input = void>(
   const startSource = source(environment.starts)
   const fixtureOptions = new Map<string, ReadonlyArray<string>>()
   const keyOf = new Map<string, string>()
+  const lifecycle = { disposed: false }
   const revision = { value: 0 }
   const results = new Map<
     string,
@@ -357,11 +418,15 @@ export const make = <Model, Message, Input = void>(
   const encodeAddress = Schema.encodeSync(Address)
   const view = defineView<Model, Message>(program.view)
 
-  const nodeOf = (id: string): Node<Model, Message, Input> =>
-    pipe(
+  const nodeOf = (id: string): Node<Model, Message, Input> => {
+    if (lifecycle.disposed) {
+      throw new Error('Atlas session is disposed.')
+    }
+    return pipe(
       Option.fromNullishOr(nodes.get(id)),
       Option.getOrThrowWith(() => new Error(`${program.name} has no ${id}.`)),
     )
+  }
 
   const inspection = (node: Node<Model, Message, Input>) => {
     const key = identity.of(node.model)
@@ -394,6 +459,11 @@ export const make = <Model, Message, Input = void>(
     const pendingDescription = describeCommands(arrival.pending)
     identity.of(arrival.input, `${program.name}.input`)
     identity.of(arrival.model, `${program.name}.model`)
+    if (!Schema.is(program.Model)(arrival.model)) {
+      throw new InvalidModelError(
+        `${program.name}: invalid Model returned by start/update.`,
+      )
+    }
     identity.of(pendingDescription, `${program.name}.pending`)
     return {
       arrival,
@@ -568,11 +638,11 @@ export const make = <Model, Message, Input = void>(
     return current
   }
 
-  const pull = <Value>(
+  const pullSteps = function* <Value>(
     current: Source<Value>,
     index: number,
     charge: (work: number) => boolean = () => true,
-  ): Read<Value> => {
+  ): Generator<void, Read<Value>> {
     while (true) {
       const known = current.values[index]
       if (known !== undefined) {
@@ -586,6 +656,7 @@ export const make = <Model, Message, Input = void>(
       if (!charge(current.work + 1)) {
         return { kind: 'limit' }
       }
+      yield
       const item = current.iterator.next()
       current.work += 1
       revision.value += 1
@@ -598,6 +669,19 @@ export const make = <Model, Message, Input = void>(
     }
   }
 
+  const finish = <Value>(iterator: Generator<void, Value>): Value => {
+    const cursor = { step: iterator.next() }
+    while (!cursor.step.done) {
+      cursor.step = iterator.next()
+    }
+    return cursor.step.value
+  }
+  const pull = <Value>(
+    current: Source<Value>,
+    index: number,
+    charge?: (work: number) => boolean,
+  ): Read<Value> => finish(pullSteps(current, index, charge))
+
   const knownStep = <Value>(outcome: Outcome<Value>): Option.Option<Step> =>
     preparedArrivals.get(outcome)?.maybeStep ?? Option.none()
 
@@ -606,10 +690,10 @@ export const make = <Model, Message, Input = void>(
     return Array.getSomes(Array.map(sources.get(id)?.values ?? [], knownStep))
   }
 
-  const successors = (
+  const probe = function* (
     id: string,
     override: Limits = {},
-  ): ReadonlyArray<Step> => {
+  ): Generator<void, ReadonlyArray<Step>> {
     const node = nodeOf(id)
     const bound = limitsOf(override, limits)
     const admitted = new Set([id])
@@ -620,7 +704,8 @@ export const make = <Model, Message, Input = void>(
     const current = sourceOf(id)
     const cursor = { index: 0 }
     while (cursor.index < bound.transitions) {
-      const item = pull(
+      yield
+      const item = yield* pullSteps(
         current,
         cursor.index,
         work => work <= bound.enumerationWork,
@@ -644,11 +729,17 @@ export const make = <Model, Message, Input = void>(
     return result
   }
 
-  const run = (
+  const successors = (state: string, limits?: Limits): ReadonlyArray<Step> =>
+    finish(probe(state, limits))
+
+  const runSteps = function* (
     requestedDepth: number,
     search: Search = 'breadth',
     override: Limits = {},
-  ): SearchResult => {
+  ): Generator<void, SearchResult> {
+    if (lifecycle.disposed) {
+      throw new Error('Atlas session is disposed.')
+    }
     const depth = limit(requestedDepth, 'Depth')
     const bound = limitsOf(override, limits)
     const cacheKey = `${search} ${depth} ${bound.states} ${bound.transitions} ${bound.enumerationWork}`
@@ -685,11 +776,11 @@ export const make = <Model, Message, Input = void>(
       startIndex: 0,
     }
 
-    const read = <Value>(
+    const read = function* <Value>(
       current: Source<Value>,
       index: number,
       isStart = false,
-    ): Read<Value> => {
+    ): Generator<void, Read<Value>> {
       const known = current.values[index]
       if (
         (known === undefined ? !current.done : !charged.has(known)) &&
@@ -698,7 +789,8 @@ export const make = <Model, Message, Input = void>(
         progress.stopped = 'transition-limit'
         return { kind: 'limit' }
       }
-      const item = pull(current, index, work => {
+      yield
+      const item = yield* pullSteps(current, index, work => {
         const charged = enumerationCharges.get(current) ?? 0
         const additional = Math.max(0, work - charged)
         const available = bound.enumerationWork - counters.enumerationWork
@@ -767,7 +859,7 @@ export const make = <Model, Message, Input = void>(
 
     const startOutcomes: Array<Outcome<Input>> = []
     while (progress.stopped === undefined && !progress.startsDone) {
-      const item = read(startSource, progress.startIndex, true)
+      const item = yield* read(startSource, progress.startIndex, true)
       if (item.kind === 'done') {
         progress.startsDone = true
       } else if (item.kind === 'value') {
@@ -779,13 +871,16 @@ export const make = <Model, Message, Input = void>(
       }
     }
 
-    const expand = (id: string, distance: number) => {
+    const expand = function* (
+      id: string,
+      distance: number,
+    ): Generator<void, void> {
       const current = sourceOf(id)
       const node = nodeOf(id)
       const cursor = { index: 0, done: false }
       frontier.add(id)
       while (progress.stopped === undefined && !cursor.done) {
-        const item = read(current, cursor.index)
+        const item = yield* read(current, cursor.index)
         if (item.kind === 'done') {
           expanded.set(id, distance)
           frontier.delete(id)
@@ -807,7 +902,7 @@ export const make = <Model, Message, Input = void>(
       while (progress.stopped === undefined && cursor.index < order.length) {
         const id = order[cursor.index]
         if (id !== undefined) {
-          expand(id, distances.get(id) ?? 0)
+          yield* expand(id, distances.get(id) ?? 0)
         }
         cursor.index += 1
       }
@@ -830,7 +925,7 @@ export const make = <Model, Message, Input = void>(
         }
         frontier.add(frame.id)
         expanded.set(frame.id, frame.distance)
-        const item = read(sourceOf(frame.id), frame.index)
+        const item = yield* read(sourceOf(frame.id), frame.index)
         if (item.kind === 'done') {
           frontier.delete(frame.id)
           frames.pop()
@@ -852,15 +947,15 @@ export const make = <Model, Message, Input = void>(
       }
     } else {
       const sampledStarts = new Set<object>()
-      Array.forEach(Array.range(1, WALKS), seed => {
+      for (const seed of Array.range(1, WALKS)) {
         if (progress.stopped !== undefined) {
-          return
+          continue
         }
         const next = random(seed)
         const starting =
           startOutcomes[Math.floor(next() * startOutcomes.length)]
         if (starting === undefined) {
-          return
+          continue
         }
         sampledStarts.add(starting)
         const walk = { at: admit(prepareStart(starting), 0), distance: 0 }
@@ -875,7 +970,7 @@ export const make = <Model, Message, Input = void>(
           const cursor = { index: 0, done: false }
           frontier.add(id)
           while (progress.stopped === undefined && !cursor.done) {
-            const item = read(current, cursor.index)
+            const item = yield* read(current, cursor.index)
             if (item.kind === 'done') {
               cursor.done = true
             } else if (item.kind === 'value') {
@@ -884,7 +979,7 @@ export const make = <Model, Message, Input = void>(
             }
           }
           if (progress.stopped !== undefined) {
-            return
+            continue
           }
           const selected = offered[Math.floor(next() * offered.length)]
           if (selected === undefined) {
@@ -902,7 +997,7 @@ export const make = <Model, Message, Input = void>(
             walk.distance += 1
           }
         }
-      })
+      }
       Array.forEach(order, id => {
         const current = sources.get(id)
         if (
@@ -948,6 +1043,12 @@ export const make = <Model, Message, Input = void>(
     results.set(cacheKey, { revision: revision.value, result })
     return result
   }
+
+  const run = (
+    depth: number,
+    search: Search = 'breadth',
+    limits?: Limits,
+  ): SearchResult => finish(runSteps(depth, search, limits))
 
   const reach = (
     depth: number,
@@ -1049,8 +1150,81 @@ export const make = <Model, Message, Input = void>(
         ),
     })
 
-  const check = (depth: number, limits?: Limits): ReadonlyArray<Violation> => {
-    const result = run(depth, 'breadth', limits)
+  const resolveSteps = function* (
+    address: Address,
+  ): Generator<void, Option.Option<string>> {
+    if (lifecycle.disposed) {
+      throw new Error('Atlas session is disposed.')
+    }
+    const known = Array.fromIterable(nodes.values()).find(node =>
+      isSameAddress(node.trace, address),
+    )
+    if (known !== undefined) {
+      return Option.some(known.id)
+    }
+    const first = address[0]
+    if (first === undefined || first.kind !== 'Start') {
+      return Option.none()
+    }
+    const input = yield* replayChoicesSteps(environment.starts, first.decisions)
+    const current = {
+      id: publishArrival(
+        prepareStart({ decisions: first.decisions, value: input }),
+      ).to,
+    }
+    for (const hop of address.slice(1)) {
+      yield
+      if (hop.kind === 'Event') {
+        if (Option.isNone(hop.maybeMessage)) {
+          return Option.none()
+        }
+        const message = decodeMessage(hop.maybeMessage.value)
+        if (Option.isNone(message)) {
+          return Option.none()
+        }
+        const next = interact(current.id, message.value)
+        if (Option.isNone(next)) {
+          return Option.none()
+        }
+        current.id = next.value
+      } else {
+        const next = environment.next
+        if (next === undefined) {
+          return Option.none()
+        }
+        const node = nodeOf(current.id)
+        const transition = yield* replayChoicesSteps(
+          () =>
+            next({
+              input: node.input,
+              model: node.model,
+              pending: node.pending,
+              interactions:
+                environment.inputs === undefined
+                  ? {}
+                  : Record.fromIterableWith(
+                      inspection(node).interactions,
+                      ({ key, message }) => [key, message],
+                    ),
+            }),
+          hop.decisions,
+        )
+        if (transition.kind !== hop.kind) {
+          return Option.none()
+        }
+        current.id = publishArrival(
+          prepareNext(node, { decisions: hop.decisions, value: transition }),
+        ).to
+      }
+    }
+    return Option.some(current.id)
+  }
+
+  const checkSteps = function* (
+    depth: number,
+    limits?: Limits,
+  ): Generator<void, ReadonlyArray<Violation>> {
+    const result = yield* runSteps(depth, 'breadth', limits)
     const failures = new Map<string, Violation>()
     const report = (failure: Violation) => {
       const previous = failures.get(failure.property)
@@ -1061,7 +1235,8 @@ export const make = <Model, Message, Input = void>(
         failures.set(failure.property, failure)
       }
     }
-    Array.forEach(result.reach.states, id => {
+    for (const id of result.reach.states) {
+      yield
       const node = nodeOf(id)
       const trace = result.paths.get(id) ?? []
       Array.forEach(options.properties ?? [], property => {
@@ -1070,7 +1245,8 @@ export const make = <Model, Message, Input = void>(
         }
       })
       if (trace.length <= depth) {
-        Array.forEach(result.edges.get(id) ?? [], step => {
+        for (const step of result.edges.get(id) ?? []) {
+          yield
           const event = messages.get(step)
           if (event !== undefined) {
             Array.forEach(options.properties ?? [], property => {
@@ -1086,15 +1262,21 @@ export const make = <Model, Message, Input = void>(
               }
             })
           }
-        })
+        }
       }
-    })
+    }
     return Array.fromIterable(failures.values())
   }
 
-  const groups = (states: ReadonlyArray<string>): ReadonlyArray<Group> => {
+  const check = (depth: number, limits?: Limits): ReadonlyArray<Violation> =>
+    finish(checkSteps(depth, limits))
+
+  const groupSteps = function* (
+    states: ReadonlyArray<string>,
+  ): Generator<void, ReadonlyArray<Group>> {
     const grouped = new Map<unknown, { home: string; states: Array<string> }>()
-    Array.forEach(states, id => {
+    for (const id of states) {
+      yield
       const node = nodeOf(id)
       const key =
         environment.inputs === undefined
@@ -1106,9 +1288,12 @@ export const make = <Model, Message, Input = void>(
       } else {
         grouped.set(key, { home: id, states: [id] })
       }
-    })
+    }
     return Array.fromIterable(grouped.values())
   }
+
+  const groups = (states: ReadonlyArray<string>): ReadonlyArray<Group> =>
+    finish(groupSteps(states))
 
   const describeReach = (depth: number): string => {
     const { reach: reached, edges } = run(depth, 'breadth')
@@ -1145,6 +1330,43 @@ export const make = <Model, Message, Input = void>(
     )
   }
 
+  const successorStatus = (id: string): SuccessorStatus => {
+    nodeOf(id)
+    const current = sources.get(id)
+    return environment.next === undefined ||
+      (current?.done &&
+        current.values.every(outcome => Option.isSome(knownStep(outcome))))
+      ? 'complete'
+      : current === undefined
+        ? 'unseen'
+        : 'partial'
+  }
+  const snapshotSteps = function* (): Generator<
+    void,
+    ReadonlyArray<StateSnapshot>
+  > {
+    const result: Array<StateSnapshot> = []
+    for (const node of nodes.values()) {
+      yield
+      result.push({
+        id: node.id,
+        model: node.model,
+        encodedModel: encodeModel(node.model),
+        address: address(node.id),
+        key: key(node.id),
+        trace: node.trace,
+        pending: Array.map(node.pending, command => ({
+          name: command.name,
+          args: formatValue(command.args ?? {}),
+        })),
+        next: knownSuccessors(node.id),
+        successorStatus: successorStatus(node.id),
+      })
+    }
+    return result
+  }
+  const snapshot = (): ReadonlyArray<StateSnapshot> => finish(snapshotSteps())
+
   return {
     name: program.name,
     describe: describeReach,
@@ -1154,23 +1376,15 @@ export const make = <Model, Message, Input = void>(
       property => property.name,
     ),
     check,
+    checkSteps,
     groups,
+    groupSteps,
     grouping:
       'Rendered markup for view-driven environments; equal Models otherwise',
     reach,
     successors,
     knownSuccessors,
-    successorStatus: id => {
-      nodeOf(id)
-      const current = sources.get(id)
-      return environment.next === undefined ||
-        (current?.done &&
-          current.values.every(outcome => Option.isSome(knownStep(outcome))))
-        ? 'complete'
-        : current === undefined
-          ? 'unseen'
-          : 'partial'
-    },
+    successorStatus,
     interact,
     observe: id => {
       const node = nodeOf(id)
@@ -1180,6 +1394,7 @@ export const make = <Model, Message, Input = void>(
     address,
     key,
     resolve,
+    resolveSteps,
     pending: id =>
       Array.map(nodeOf(id).pending, command => ({
         name: command.name,
@@ -1199,6 +1414,54 @@ export const make = <Model, Message, Input = void>(
         toParentMessage,
       }),
     nodes: identity.size,
+    fresh: () => make(program, environment, options),
+    dispose: () => {
+      if (lifecycle.disposed) {
+        return
+      }
+      lifecycle.disposed = true
+      const iterators: ReadonlyArray<Iterator<unknown>> = [
+        startSource.iterator,
+        ...Array.map(
+          Array.fromIterable(sources.values()),
+          current => current.iterator,
+        ),
+      ]
+      const errors = Array.flatMap(iterators, iterator => {
+        try {
+          iterator.return?.()
+          return []
+        } catch (error) {
+          return [error]
+        }
+      })
+      startSource.values.length = 0
+      startSource.valueWork.length = 0
+      identity.clear()
+      screens.clear()
+      nodes.clear()
+      idOf.clear()
+      sources.clear()
+      inspections.clear()
+      results.clear()
+      fixtureOptions.clear()
+      keyOf.clear()
+      if (Array.isArrayNonEmpty(errors)) {
+        throw new AggregateError(errors, 'Atlas cleanup failed.')
+      }
+    },
+    explore: function* (depth, search, limits) {
+      return (yield* runSteps(depth, search, limits)).reach
+    },
+    snapshot,
+    snapshotSteps,
+    probe,
+    renderModel: (model, slot, h, toParentMessage) => {
+      if (!Schema.is(program.Model)(model)) {
+        throw new InvalidModelError(`${program.name}: invalid preview Model.`)
+      }
+      return h.submodel({ slotId: slot, model, view, toParentMessage })
+    },
   }
 }
 

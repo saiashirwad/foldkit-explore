@@ -2,8 +2,8 @@ import { Schema } from 'effect'
 import * as Scene from 'foldkit/scene'
 import { expect, test } from 'vitest'
 
+import { analysisScene, dispatch, settle } from './analysis-test'
 import { type Environment, type Program, make, send } from './atlas'
-import { compare } from './compare'
 import { fixture } from './fixture'
 import { Message, makeLab } from './lab'
 import * as Review from './review'
@@ -46,39 +46,27 @@ const lab = () =>
   makeLab(
     [make(before, environment)],
     [
-      {
-        name: 'Changed heading',
-        run: depth =>
-          compare({
-            before,
-            after,
-            environment,
-            limits: { depth, states: 50, transitions: 100 },
-          }),
-      },
-      {
-        name: 'Identical',
-        run: depth =>
-          compare({
-            before,
-            after: before,
-            environment,
-            limits: { depth, states: 50, transitions: 100 },
-          }),
-      },
-      {
-        name: 'Shared property failure',
-        run: depth =>
-          compare({
-            before,
-            after: before,
-            environment,
-            properties: [
-              { name: 'Stay at start', state: state => state.model === 0 },
-            ],
-            limits: { depth, states: 50, transitions: 100 },
-          }),
-      },
+      Review.makeComparisonCase('Changed heading', {
+        before,
+        after,
+        environment,
+        limits: { depth: 8, states: 50, transitions: 100 },
+      }),
+      Review.makeComparisonCase('Identical', {
+        before,
+        after: before,
+        environment,
+        limits: { depth: 8, states: 50, transitions: 100 },
+      }),
+      Review.makeComparisonCase('Shared property failure', {
+        before,
+        after: before,
+        environment,
+        properties: [
+          { name: 'Stay at start', state: state => state.model === 0 },
+        ],
+        limits: { depth: 8, states: 50, transitions: 100 },
+      }),
     ],
   )
 
@@ -116,11 +104,11 @@ test.each([
   expect(review.update(expanded, message).model.limit).toBe(24)
 })
 
-test('Compare mode shows grouped previews and replays the chosen trace through the inspector', () => {
+test('Compare mode shows grouped previews and replays the chosen trace through the inspector', async () => {
   const application = lab()
-  Scene.scene(
+  await analysisScene(
     application,
-    Scene.given(application.init().model),
+    await settle(application, application.init()),
     Scene.click(Scene.role('button', { name: 'Compare' })),
     Scene.tap(simulation => {
       expect(
@@ -156,21 +144,23 @@ test('Compare mode shows grouped previews and replays the chosen trace through t
   )
 })
 
-test('identical versions state the coverage limit without manufacturing a finding', () => {
+test('identical versions state the coverage limit without manufacturing a finding', async () => {
   const application = lab()
-  const compared = application.update(
-    application.init().model,
+  const compared = await dispatch(
+    application,
+    await settle(application, application.init()),
     Message.SelectedMode({ mode: 'Compare' }),
-  ).model
-  const selected = application.update(
+  )
+  const selected = await dispatch(
+    application,
     compared,
     Message.GotReviewMessage({
       message: Review.Message.SelectedComparison({ name: 'Identical' }),
     }),
-  ).model
-  Scene.scene(
+  )
+  await analysisScene(
     application,
-    Scene.given(selected),
+    selected,
     Scene.tap(simulation => {
       expect(Scene.textContent(simulation.html)).toContain(
         'No differences found',
@@ -185,23 +175,25 @@ test('identical versions state the coverage limit without manufacturing a findin
   )
 })
 
-test('shared property failures remain visible and replayable when identical versions have no differences', () => {
+test('shared property failures remain visible and replayable when identical versions have no differences', async () => {
   const application = lab()
-  const compared = application.update(
-    application.init().model,
+  const compared = await dispatch(
+    application,
+    await settle(application, application.init()),
     Message.SelectedMode({ mode: 'Compare' }),
-  ).model
-  const selected = application.update(
+  )
+  const selected = await dispatch(
+    application,
     compared,
     Message.GotReviewMessage({
       message: Review.Message.SelectedComparison({
         name: 'Shared property failure',
       }),
     }),
-  ).model
-  Scene.scene(
+  )
+  await analysisScene(
     application,
-    Scene.given(selected),
+    selected,
     Scene.tap(simulation => {
       expect(Scene.findAll(simulation.html, 'article.comparison-card')).toEqual(
         [],
@@ -242,29 +234,26 @@ test('shared property failures remain visible and replayable when identical vers
   )
 })
 
-test('an exhausted work budget exposes numeric coverage and disables ineffective depth increases', () => {
+test('an exhausted work budget exposes numeric coverage and disables ineffective depth increases', async () => {
   const application = makeLab(
     [make(before, environment)],
     [
-      {
-        name: 'Limited',
-        run: depth =>
-          compare({
-            before,
-            after: before,
-            environment,
-            limits: { depth, states: 50, transitions: 1 },
-          }),
-      },
+      Review.makeComparisonCase('Limited', {
+        before,
+        after: before,
+        environment,
+        limits: { depth: 8, states: 50, transitions: 1 },
+      }),
     ],
   )
-  const compared = application.update(
-    application.init().model,
-    Message.SelectedMode({ mode: 'Compare' }),
-  ).model
-  Scene.scene(
+  const compared = await dispatch(
     application,
-    Scene.given(compared),
+    await settle(application, application.init()),
+    Message.SelectedMode({ mode: 'Compare' }),
+  )
+  await analysisScene(
+    application,
+    compared,
     Scene.tap(simulation => {
       expect(Scene.textContent(simulation.html)).toContain(
         'Search stopped at the transition limit',
@@ -288,7 +277,7 @@ test('an exhausted work budget exposes numeric coverage and disables ineffective
   )
 })
 
-test('raw bigint Models remain inspectable in Compare mode', () => {
+test('raw bigint Models remain inspectable in Compare mode', async () => {
   const bigintBefore: Program<bigint, number> = {
     name: 'Before bigint',
     Model: Schema.BigInt,
@@ -306,25 +295,22 @@ test('raw bigint Models remain inspectable in Compare mode', () => {
   const application = makeLab(
     [make(bigintBefore, starts)],
     [
-      {
-        name: 'Bigint Model',
-        run: depth =>
-          compare({
-            before: bigintBefore,
-            after: bigintAfter,
-            environment: starts,
-            limits: { depth, states: 10, transitions: 10 },
-          }),
-      },
+      Review.makeComparisonCase('Bigint Model', {
+        before: bigintBefore,
+        after: bigintAfter,
+        environment: starts,
+        limits: { depth: 8, states: 10, transitions: 10 },
+      }),
     ],
   )
-  const compared = application.update(
-    application.init().model,
-    Message.SelectedMode({ mode: 'Compare' }),
-  ).model
-  Scene.scene(
+  const compared = await dispatch(
     application,
-    Scene.given(compared),
+    await settle(application, application.init()),
+    Message.SelectedMode({ mode: 'Compare' }),
+  )
+  await analysisScene(
+    application,
+    compared,
     Scene.tap(simulation => {
       expect(Scene.textContent(simulation.html)).toContain('Models')
       expect(Scene.textContent(simulation.html)).toContain('0n')
@@ -335,7 +321,7 @@ test('raw bigint Models remain inspectable in Compare mode', () => {
   )
 })
 
-test('inspecting a later finding preserves cards revealed by Show more', () => {
+test('inspecting a later finding preserves cards revealed by Show more', async () => {
   const manyBefore: Program<number, number> = {
     ...before,
     view: (model, h) => h.p([], [`Before ${model}`]),
@@ -365,25 +351,22 @@ test('inspecting a later finding preserves cards revealed by Show more', () => {
   const application = makeLab(
     [make(manyBefore, manyEnvironment)],
     [
-      {
-        name: 'Many findings',
-        run: depth =>
-          compare({
-            before: manyBefore,
-            after: manyAfter,
-            environment: manyEnvironment,
-            limits: { depth, states: 50, transitions: 100 },
-          }),
-      },
+      Review.makeComparisonCase('Many findings', {
+        before: manyBefore,
+        after: manyAfter,
+        environment: manyEnvironment,
+        limits: { depth: 8, states: 50, transitions: 100 },
+      }),
     ],
   )
-  const compared = application.update(
-    application.init().model,
-    Message.SelectedMode({ mode: 'Compare' }),
-  ).model
-  Scene.scene(
+  const compared = await dispatch(
     application,
-    Scene.given(compared),
+    await settle(application, application.init()),
+    Message.SelectedMode({ mode: 'Compare' }),
+  )
+  await analysisScene(
+    application,
+    compared,
     Scene.click(Scene.role('button', { name: 'Show more findings' })),
     Scene.click(Scene.nth(25)(Scene.all.role('button', { name: 'Inspect' }))),
     Scene.tap(simulation => {

@@ -215,6 +215,18 @@ bun run build
 
 The lab lets you filter by trace choices, change search and depth, interact with previews, inspect and answer pending Commands, rewind a trace, and pin an execution. Comparison mode shows grouped findings, before/after previews, concrete traces, replay verification, and incomplete-search status.
 
+## UI execution and session ownership
+
+Gallery exploration, property checks, inspector probing, live updates and fresh replay run only in declared Foldkit Commands. Views render immutable schema-defined snapshots; they never read or advance a live Atlas/Comparison. Preparing an update only changes the UI Model and declares Commands.
+
+The shared Effect runner advances at most 128 checkpoints per Command and schedules a sleep before each chunk, so browser input can run between chunks. Fixture traversal, selected-decision replay, property checking and gallery snapshot/group construction expose advancement checkpoints. The Model distinguishes running progress, completed work, cancellation, invalid program Models and unexpected defects. Completion means the requested **bounded** analysis finished, not that an incomplete search proved a property or equivalence. Cancelled work is never displayed as a successful check.
+
+Every progress/completion carries a monotonically increasing run identifier. Superseded messages are ignored; old queued Commands cannot revive a cancelled session. Each UI mode owns one session, not a graph per depth. Comparison depth increases reuse that session; decreases start fresh. The gallery can reuse its source prefixes for any search/depth. Switching programs/scenarios, resetting, cancelling or leaving a mode closes its Effect scope and iterators. Runtime resource-Layer finalizers close remaining sessions when the application ends. Saved gallery positions/pins remain Addresses and are replayed by Commands when returning to a fresh session.
+
+`createComparison(options)` creates an unstarted session (`running` status). `advance(checkpoints)` returns whether the requested limits have finished, and `setLimits` accepts only nondecreasing bounds. The synchronous `compare`/`resume` APIs still run to their declared limits. Atlas's synchronous APIs likewise remain available to headless callers; the UI uses their checkpointed generator counterparts. `dispose()` releases engine iterators and caches.
+
+Cooperative scheduling cannot interrupt arbitrary non-yielding application code, a single wide fixture/Model/codec operation, or final snapshot validation. It is not a hard wall-clock or memory limit. Typed total replay limits and portable evidence remain separate from this runner protocol.
+
 ## Layout
 
 | Path | Role |
@@ -224,7 +236,8 @@ The lab lets you filter by trace choices, change search and depth, interact with
 | `src/lab/atlas.ts` | Program/environment contracts, bounded graph exploration, properties, and addresses |
 | `src/lab/interactions.ts`, `src/lab/observation.ts` | Scene probing and structured observations |
 | `src/lab/compare.ts` | Fresh paired exploration, findings, limits, and replay |
-| `src/lab/lab.ts`, `src/lab/review.ts` | Gallery and comparison views |
+| `src/lab/analysis-runner.ts`, `src/lab/analysis-data.ts` | Scoped chunk execution and immutable UI result schemas |
+| `src/lab/lab.ts`, `src/lab/review.ts` | Gallery and comparison Models, Commands and pure views |
 | `src/programs.ts`, `src/comparisons.ts` | Program, environment, atlas, and comparison registrations |
 | `src/main.cases.ts`, `src/release/main.cases.ts`, `src/signup/main.cases.ts` | Starting inputs and next-step environments |
 | `src/signup/properties.ts`, `src/signup/variants.ts` | Signup properties and comparison examples |
