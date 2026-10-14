@@ -4,6 +4,7 @@ node_modules/
 # Build outputs
 dist/
 build/
+artifacts/
 
 # Environment variables
 .env

@@ -178,9 +178,29 @@ test('detects swapped control handlers without changing semantic event matching'
     'Action "Delete" changed Message',
     'Action "Cancel" changed Message',
   ])
-  expect(result.findings.every(finding => finding.examples.length === 3)).toBe(
-    true,
-  )
+  result.findings.forEach(finding => {
+    expect(finding.examples).toHaveLength(7)
+    expect(
+      finding.examples.map(example => [
+        example.trace.at(-2)?.before?.model ?? 'start',
+        example.before?.model,
+        example.after?.model,
+        example.trace.at(-1)?.beforeEvent?.message ?? 'start',
+        example.trace.at(-1)?.afterEvent?.message ?? 'start',
+      ]),
+    ).toEqual(
+      expect.arrayContaining([
+        ['start', 0, 0, 'start', 'start'],
+        [0, 1, 1, 1, 1],
+        [0, 2, 2, 2, 2],
+        [1, 1, 1, 1, 1],
+        [1, 2, 2, 2, 2],
+        [2, 1, 1, 1, 1],
+        [2, 2, 2, 2, 2],
+      ]),
+    )
+    expect(finding.shortest.depth).toBe(0)
+  })
   expect(result.findings[0]?.before).not.toEqual(result.findings[0]?.after)
 })
 

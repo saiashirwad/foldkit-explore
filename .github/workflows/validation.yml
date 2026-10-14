@@ -1,0 +1,59 @@
+name: Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - run: bun run test
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun run build
+      - name: Headless finite safety check
+        run: |
+          mkdir -p artifacts
+          bun run check:analysis > artifacts/check-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: headless-check
+          path: artifacts/check-report.json
+          if-no-files-found: ignore
+
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - run: bunx --no-install playwright install --with-deps chromium
+      - run: bun run test:browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-conformance
+          path: artifacts/browser/
+          if-no-files-found: ignore

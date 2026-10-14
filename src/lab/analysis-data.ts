@@ -125,6 +125,7 @@ export const ComparisonSnapshot = Schema.Struct({
     beforeTransitions: Schema.Number,
     afterTransitions: Schema.Number,
     enumerationWork: Schema.Number,
+    joinOperations: Schema.Number,
   }),
   findings: Schema.Array(
     Schema.Struct({

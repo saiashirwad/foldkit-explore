@@ -23,6 +23,8 @@ bun dev                 # open /lab.html (index.html is the plain weather app)
 bun run test            # vitest; rewrites src/lab/*.atlas when called with -u
 bun run typecheck
 bun run lint            # oxlint with the Foldkit plugin; its rules are strict and right
+bun run check:analysis  # JSON CheckReport; non-complete/unexercised/error is nonzero
+bun run test:browser    # locked Playwright Chromium; install browser first
 bunx oxfmt src          # format
 ```
 
@@ -94,6 +96,7 @@ bunx oxfmt src          # format
 
 ### Conventions beyond FOLDKIT.md
 
+- **Validation.** CI pins Bun 1.4.0/Node 24.19.0, installs from the frozen lockfile, and runs tests/lint/the declared compiler/build plus a separate real Chromium smoke. `finite-oracle.ts` must remain independent of production identity/enumeration/traversal/matching. Persist seeds and keep explicit protocol fixtures small. `joinOperations` counts physical event-map probes, not transitions or fixture work; do not optimize away logical paired-edge property checks. `check:analysis` exits 0 only for a complete exercised report; 1 counterexample, 2 incomplete, 3 error, 4 unexercised. Artifacts preserve tagged report data. Quantitative cross-checks wait for #11's metric API.
 - **No type assertions.** Lint forbids `as`. `fixture` is typed by looking the replayed value up among its own cases. `pendingRequests` uses a localized name-based type predicate to recover a definition's typed arguments, relying on unique Command names within a program (Foldkit's matching contract).
 - **Effect v4 specifics:**
   - `Hash.combine` is curried only.

@@ -242,7 +242,7 @@ The comparison examples in `src/comparisons.ts` cover a removed retry, changed h
 ## Run it
 
 ```bash
-bun install
+bun install --frozen-lockfile
 bun dev                  # open /lab.html; / is the plain Weather app
 bun run test
 bun run typecheck
@@ -263,6 +263,25 @@ Every progress/completion carries a monotonically increasing run identifier. Sup
 `createComparison(options)` creates an unstarted session (`running` status). `advance(checkpoints)` returns whether the requested limits have finished, and `setLimits` accepts only nondecreasing bounds. The synchronous `compare`/`resume` APIs still run to their declared limits. Atlas's synchronous APIs likewise remain available to headless callers; the UI uses their checkpointed generator counterparts. `dispose()` releases engine iterators and caches.
 
 Cooperative scheduling cannot interrupt arbitrary non-yielding application code, a single wide fixture/Model/codec operation, or final snapshot validation. It is not a hard wall-clock or memory limit. Typed replay allowances bound total selected replay and counterpart-absence work; portable evidence remains separate from the compact UI Addresses and runner snapshots.
+
+## Validation and headless policy
+
+`.github/workflows/validation.yml` runs tests, lint, the declared TypeScript compiler and production build from `bun.lock`, using Bun **1.4.0** and Node **24.19.0**. It does not substitute a different compiler to obtain a pass. A separate job installs the locked Playwright **1.64.0** Chromium revision and runs `bun run test:browser`. The browser smoke exercises the real `/lab.html` entry point plus a deliberately large pruned fixture: cancellation, reset, depth/mode controls, live interaction, inspection, comparison previews and fresh replay. It uploads screenshots, logs and a JSON result. This is browser conformance, not computed-accessibility, cross-browser or screenshot-diff coverage.
+
+```sh
+bun run check:analysis > check-report.json
+bun run check:analysis --scenario=signup --depth=8 > signup-report.json
+bunx --no-install playwright install chromium
+bun run test:browser
+```
+
+The headless command emits one JSON artifact containing the exact `CheckReport` in the lossless native tagged data encoding, plus a readable coverage/property summary. Default `safe` is a finite safety smoke, not a claim about Signup. Exit codes are **0** complete and exercised, **1** counterexample, **2** incomplete, **3** execution/evaluation error, and **4** unexercised. Errors take precedence over counterexamples; the report retains both. No registered properties, empty starts, bounded absence of violations and cancellation are never success. Signup normally remains incomplete at depth 8 and therefore exits 2. `counterexample`, `incomplete`, `error` and `empty` scenarios exercise the failure policy in fresh-process tests. JSON is the transport; decode `report` with `decodeEvidenceData` before validating `CheckReport`.
+
+`finite-oracle.ts` is a deliberately independent transition-table checker: it imports no production identity, fixture enumeration, traversal or matching code. Fixed seeds and small explicit protocol fixtures cover multiple/duplicate starts, diamonds, self-loops, revisited/distinct/duplicate edges, terminal states, selected duplicate requests, bounded resumption, run isolation and one-sided paired stops. Production results are compared by independently encoded input/Model/pending data, not session IDs. Mutation-sensitivity tests reject lost revisited edges, wrong request consumption and false frontier completion. These oracle tests run in Vitest's Node environment; existing Scene tests still use DOM simulation.
+
+Comparison's `joinOperations` counts physical event-map membership/lookups during duplicate checking, matching, reconciliation and application. It is not `transitions`, fixture work, hashing time or wall-clock cost. Width tests require exactly `8 × width` probes for matched fanouts. A 16-event fanout with one shared before node measures **289 before / 33 after generator invocations**, **272 before / 16 after updates**, **18 inspections**, **288 logical side-edge predicate evaluations**, and **1,408 join probes**. Physical generator invocations include fixture replays. This demonstrates pair-local repeated enumeration/update work while inspection already shares: side-local event/application caching is a justified follow-on, but must retain all logical paired-edge checks. No cache redesign is included here. Fixture enumeration's independent work-count regressions remain in `enumeration.test.ts`.
+
+Quantitative API cross-checks remain a follow-on to #11, which has no public metric queries yet. The browser smoke does not implement #13's full runtime-conformance contract. Complete checks remain relative to declared environments and supported semantics, never universal UI equivalence.
 
 ## Layout
 

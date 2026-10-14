@@ -67,6 +67,7 @@ export type ComparisonCounters = Readonly<{
   beforeTransitions: number
   afterTransitions: number
   enumerationWork: number
+  joinOperations: number
 }>
 
 export type Execution = Readonly<{
@@ -680,6 +681,7 @@ export const createComparison = <
     beforeTransitions: 0,
     afterTransitions: 0,
     enumerationWork: 0,
+    joinOperations: 0,
     startsComplete: false,
   }
   const transitions = () =>
@@ -1077,11 +1079,13 @@ export const createComparison = <
     ) {
       pair.reconciled = true
       for (const key of pair.beforeEvents.events.keys()) {
+        work.joinOperations += 1
         if (!pair.afterEvents.events.has(key)) {
           pair.ready.push(key)
         }
       }
       for (const key of pair.afterEvents.events.keys()) {
+        work.joinOperations += 1
         if (!pair.beforeEvents.events.has(key)) {
           pair.ready.push(key)
         }
@@ -1094,6 +1098,7 @@ export const createComparison = <
     key: string,
   ): boolean => {
     if (pair.buffered === undefined) {
+      work.joinOperations += 2
       const beforeEvent = pair.beforeEvents.events.get(key)
       const afterEvent = pair.afterEvents.events.get(key)
       pair.buffered = {
@@ -1240,12 +1245,14 @@ export const createComparison = <
       work.afterTransitions += 1
     }
     const selected = runtime.event(node, result.value.outcome)
+    work.joinOperations += 1
     if (cursor.events.has(selected.evidence.key)) {
       throw new Error(
         `Duplicate comparison event key in ${side} ${node.id}; environment alternatives must identify each semantic event unambiguously.`,
       )
     }
     cursor.events.set(selected.evidence.key, selected)
+    work.joinOperations += 1
     if (counterpart.events.has(selected.evidence.key)) {
       ready.push(selected.evidence.key)
     }
@@ -1554,6 +1561,7 @@ export const createComparison = <
         beforeTransitions: work.beforeTransitions,
         afterTransitions: work.afterTransitions,
         enumerationWork: work.enumerationWork,
+        joinOperations: work.joinOperations,
       }
     },
     get findings() {
