@@ -31,6 +31,7 @@ import {
   type Observation,
   commandKey,
   describeCommands,
+  freezeCommands,
   observationOf,
 } from './observation'
 
@@ -386,10 +387,11 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
   const { environment } = options
   const properties = options.properties ?? []
   const identity = makeIdentity()
-  const inspectionCache = new Map<
+  type InspectionCache = Map<
     unknown,
-    ReturnType<typeof inspect<unknown, Message>>
-  >()
+    Map<unknown, Map<unknown, ReturnType<typeof inspect<unknown, Message>>>>
+  >
+  const inspectionCache: InspectionCache = new Map()
   const screenDeltas = new Map<string, ReadonlyArray<Change>>()
   const makeRuntime = <Model extends BeforeModel | AfterModel>(
     program: Program<Model, Message, Input>,
@@ -403,8 +405,19 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
     const encodeModel = Schema.encodeSync(program.Model)
     const view = defineView<Model, Message>(program.view)
     const inspectModel = (model: Model) => {
-      const key = identity.of([program.Message, program.view, model])
-      const known = inspections.get(key)
+      const bySchema =
+        inspections.get(program.Message) ??
+        new Map<
+          unknown,
+          Map<unknown, ReturnType<typeof inspect<unknown, Message>>>
+        >()
+      const byView =
+        bySchema.get(program.view) ??
+        new Map<unknown, ReturnType<typeof inspect<unknown, Message>>>()
+      inspections.set(program.Message, bySchema)
+      bySchema.set(program.view, byView)
+      const key = identity.of(model, `${program.name}.model`)
+      const known = byView.get(key)
       if (known !== undefined) {
         return known
       }
@@ -419,7 +432,7 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
           return encodeMessage(message)
         },
       )
-      inspections.set(key, result)
+      byView.set(key, result)
       return result
     }
     const prepare = (
@@ -429,12 +442,16 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
       context: ReadonlyArray<Decision>,
       issued: Update.Commands<Message>,
     ): Prepared<Model, Message, Input> => {
+      identity.of(model, `${program.name}.model`)
       if (!isModel(model)) {
         throw new Error(
           `${program.name}: start or update returned an invalid Model.`,
         )
       }
+      freezeCommands(pending, `${program.name}.pending`)
       const pendingDescription = describeCommands(pending)
+      identity.of(input, `${program.name}.input`)
+      identity.of(pendingDescription, `${program.name}.pending`)
       const key = identity.of([context, input, model, pendingDescription])
       const known = nodes.get(key)
       if (known !== undefined) {
@@ -467,6 +484,7 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
       return { node, issued: describeCommands(issued) }
     }
     const start = (input: Input, context: ReadonlyArray<Decision>) => {
+      identity.of(input, `${program.name}.input`)
       const started = program.start(input)
       return prepare(
         started.model,
@@ -569,6 +587,7 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
       if (execution === undefined) {
         return h.empty
       }
+      identity.of(execution.model, `${program.name}.model`)
       if (!isModel(execution.model)) {
         throw new Error(
           `${program.name}: comparison preview has an invalid Model.`,
@@ -584,15 +603,22 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
     const sameEvidence = (
       actual: Execution,
       expected: Execution | undefined,
-    ): boolean =>
-      expected !== undefined &&
-      isModel(actual.model) &&
-      isModel(expected.model) &&
-      canonical(actual.input) === canonical(expected.input) &&
-      canonical(encodeModel(actual.model)) ===
-        canonical(encodeModel(expected.model)) &&
-      canonical(actual.pending) === canonical(expected.pending) &&
-      canonical(actual.observation) === canonical(expected.observation)
+    ): boolean => {
+      if (expected === undefined) {
+        return false
+      }
+      identity.of(actual.model, `${program.name}.model`)
+      identity.of(expected.model, `${program.name}.model`)
+      return (
+        isModel(actual.model) &&
+        isModel(expected.model) &&
+        canonical(actual.input) === canonical(expected.input) &&
+        canonical(encodeModel(actual.model)) ===
+          canonical(encodeModel(expected.model)) &&
+        canonical(actual.pending) === canonical(expected.pending) &&
+        canonical(actual.observation) === canonical(expected.observation)
+      )
+    }
     return { nodes, start, event, apply, next, render, sameEvidence }
   }
   const beforeRuntime = makeRuntime(options.before, 'B')
@@ -1241,10 +1267,7 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
     if (first === undefined || first.kind !== 'Start') {
       throw new Error('A comparison trace must begin with a shared start.')
     }
-    const replayCache = new Map<
-      unknown,
-      ReturnType<typeof inspect<unknown, Message>>
-    >()
+    const replayCache: InspectionCache = new Map()
     const replayBefore = makeRuntime(options.before, 'RB', replayCache)
     const replayAfter = makeRuntime(options.after, 'RA', replayCache)
     const input = replayChoices(environment.starts, first.startDecisions)

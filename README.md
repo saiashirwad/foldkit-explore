@@ -44,6 +44,14 @@ The original input remains available as `state.input` throughout exploration. In
 
 Reusable program and environment registrations are exported from `src/programs.ts`: `weatherProgram`, `releaseProgram`, `signupProgram`, and their corresponding environment objects. The existing `weather`, `release`, `signup`, and `signupLongContent` atlas exports remain available.
 
+### Immutable execution data
+
+Inputs, Models, and modeled Command arguments must be acyclic data: primitives other than symbols/functions, dense ordinary arrays, ordinary or null-prototype records, and the installed Effect `Option` instances. All own string-named data properties participate, including non-enumerable fields. Symbol fields, accessors, sparse/decorated arrays, decorated Options, and other custom objects (including custom `Equal` implementations) fail with a data path rather than silently losing behavior. Encode unsupported values into this domain explicitly.
+
+Atlas and Comparison validate and deep-freeze this data before interning it; inputs are checked before `start` runs. Command envelopes and pending queues are shallow-frozen, while their arguments are deep-frozen. Effects are neither traversed nor executed. Update must return new data instead of mutating old data. Reference caching remains proportional to newly replaced objects, not the full Model on each step.
+
+Execution identity preserves record property order, enumerability, and the supported prototypes, and checks equality within hash buckets. Matching and replay use `canonical()` on evidence/codec outputs: it intentionally sorts record keys and normalizes enumerability and ordinary versus null record prototypes, but retains absent fields, `undefined`, `NaN`, signed zero, and Option meaning. Programs and environments must not depend on reference identity, aliasing, descriptor writability/configurability, mutable prototypes, proxy traps, or hidden external state. There is no user-supplied execution abstraction; visual grouping never merges concrete executions.
+
 ## Model one next step
 
 `next(state)` enumerates **one transition**, not a whole scenario. `NextState<Model, Message, Input>` contains the current `model`, `pending` Commands, original `input`, and named view-derived `interactions` when the environment supplies an `inputs` domain.

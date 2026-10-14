@@ -16,6 +16,7 @@ import { type InputDomain, inspect } from './interactions'
 import {
   type Observation,
   describeCommands,
+  freezeCommands,
   observationOf,
 } from './observation'
 
@@ -388,15 +389,18 @@ export const make = <Model, Message, Input = void>(
 
   const prepare = (
     arrival: Arrival<Model, Message, Input>,
-  ): PreparedArrival<Model, Message, Input> => ({
-    arrival,
-    key: identity.of([
-      arrival.input,
-      arrival.model,
-      describeCommands(arrival.pending),
-    ]),
-    maybeStep: Option.none(),
-  })
+  ): PreparedArrival<Model, Message, Input> => {
+    freezeCommands(arrival.pending, `${program.name}.pending`)
+    const pendingDescription = describeCommands(arrival.pending)
+    identity.of(arrival.input, `${program.name}.input`)
+    identity.of(arrival.model, `${program.name}.model`)
+    identity.of(pendingDescription, `${program.name}.pending`)
+    return {
+      arrival,
+      key: identity.of([arrival.input, arrival.model, pendingDescription]),
+      maybeStep: Option.none(),
+    }
+  }
 
   const publishArrival = (
     prepared: PreparedArrival<Model, Message, Input>,
@@ -446,6 +450,7 @@ export const make = <Model, Message, Input = void>(
     if (known !== undefined) {
       return known
     }
+    identity.of(outcome.value, `${program.name}.input`)
     const started = program.start(outcome.value)
     const prepared = prepare({
       kind: 'Start',
