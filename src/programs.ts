@@ -3,12 +3,12 @@ import * as Weather from './main'
 import { weatherEnvironment } from './main.cases'
 import * as Release from './release/main'
 import { releaseEnvironment } from './release/main.cases'
-import * as Signup from './signup/main'
 import {
   signupEnvironment,
   signupLongContentEnvironment,
 } from './signup/main.cases'
 import { properties } from './signup/properties'
+import { original } from './signup/variants'
 
 export {
   weatherEnvironment,
@@ -39,18 +39,7 @@ export const releaseProgram: Atlas.Program<Release.Model, Release.Message> = {
   view: Release.view,
 }
 
-export const signupProgram: Atlas.Program<
-  Signup.Model,
-  Signup.Message,
-  Signup.Plan
-> = {
-  name: 'Signup',
-  Model: Signup.Model,
-  Message: Signup.Message,
-  start: Signup.init,
-  update: Signup.update,
-  view: Signup.view,
-}
+export const signupProgram = original
 
 export const weather = Atlas.make(weatherProgram, weatherEnvironment)
 export const release = Atlas.make(releaseProgram, releaseEnvironment)

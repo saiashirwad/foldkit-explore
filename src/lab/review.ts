@@ -1053,90 +1053,106 @@ export const makeReview = (cases: ReadonlyArray<ComparisonCase>) => {
       }),
     })
 
+  const headerView = (
+    model: Model,
+    mode: Html,
+    maybeComparison: Option.Option<ComparisonSnapshot>,
+    h: HtmlBuilder<Message>,
+  ): Html =>
+    h.header(
+      [h.Class('lab-header')],
+      [
+        mode,
+        h.select(
+          [
+            h.AriaLabel('Comparison'),
+            h.Class('lab-program'),
+            h.OnChange(name => Message.SelectedComparison({ name })),
+          ],
+          Array.map(cases, (scenario, index) =>
+            h.option(
+              [
+                h.Value(scenario.name),
+                h.Selected(
+                  scenario.name === model.scenario ||
+                    (model.scenario === '' && index === 0),
+                ),
+              ],
+              [scenario.name],
+            ),
+          ),
+        ),
+        h.div(
+          [h.Class('lab-header-end')],
+          [
+            Option.match(maybeComparison, {
+              onNone: () =>
+                h.span(
+                  [h.Class('lab-count'), h.Role('status')],
+                  [
+                    cases.length === 0
+                      ? 'No comparisons are registered.'
+                      : analysisLabel(model.analysis),
+                  ],
+                ),
+              onSome: comparison =>
+                h.span(
+                  [h.Class('lab-count')],
+                  [
+                    `${comparison.findings.length} findings · ${comparison.counters.pairs} pairs · ${model.analysis._tag === 'Completed' ? statusLabel(comparison) : analysisLabel(model.analysis)}`,
+                  ],
+                ),
+            }),
+            h.div(
+              [h.Class('lab-depth')],
+              [
+                h.span([], ['depth']),
+                h.button(
+                  [
+                    h.AriaLabel('Fewer comparison steps'),
+                    h.Disabled(model.depth === 0),
+                    h.OnClick(Message.ClickedShallower()),
+                  ],
+                  ['−'],
+                ),
+                h.output([], [`${model.depth}`]),
+                h.button(
+                  [
+                    h.AriaLabel('More comparison steps'),
+                    h.Disabled(
+                      Option.exists(
+                        maybeComparison,
+                        comparison => comparison.status !== 'depth-limit',
+                      ),
+                    ),
+                    h.OnClick(Message.ClickedDeeper()),
+                  ],
+                  ['+'],
+                ),
+              ],
+            ),
+            model.analysis._tag === 'Running' || model.replay._tag === 'Running'
+              ? h.button(
+                  [h.Class('lab-quiet'), h.OnClick(Message.ClickedCancel())],
+                  ['Cancel'],
+                )
+              : h.empty,
+            h.button(
+              [h.Class('lab-quiet'), h.OnClick(Message.ClickedReset())],
+              ['Reset'],
+            ),
+          ],
+        ),
+      ],
+    )
+
   const view = defineView<Model, Message, Readonly<{ mode: () => Html }>>(
     (model, inputs, h) =>
       Option.match(model.maybeSnapshot, {
         onNone: () =>
           h.div(
             [h.Class('lab')],
-            [
-              h.header(
-                [h.Class('lab-header')],
-                [
-                  inputs.mode(),
-                  h.select(
-                    [
-                      h.AriaLabel('Comparison'),
-                      h.Class('lab-program'),
-                      h.OnChange(name => Message.SelectedComparison({ name })),
-                    ],
-                    Array.map(cases, (scenario, index) =>
-                      h.option(
-                        [
-                          h.Value(scenario.name),
-                          h.Selected(
-                            scenario.name === model.scenario ||
-                              (model.scenario === '' && index === 0),
-                          ),
-                        ],
-                        [scenario.name],
-                      ),
-                    ),
-                  ),
-                  h.div(
-                    [h.Class('lab-header-end')],
-                    [
-                      h.span(
-                        [h.Class('lab-count'), h.Role('status')],
-                        [
-                          cases.length === 0
-                            ? 'No comparisons are registered.'
-                            : analysisLabel(model.analysis),
-                        ],
-                      ),
-                      h.div(
-                        [h.Class('lab-depth')],
-                        [
-                          h.span([], ['depth']),
-                          h.button(
-                            [
-                              h.AriaLabel('Fewer comparison steps'),
-                              h.Disabled(model.depth === 0),
-                              h.OnClick(Message.ClickedShallower()),
-                            ],
-                            ['−'],
-                          ),
-                          h.output([], [`${model.depth}`]),
-                          h.button(
-                            [
-                              h.AriaLabel('More comparison steps'),
-                              h.OnClick(Message.ClickedDeeper()),
-                            ],
-                            ['+'],
-                          ),
-                        ],
-                      ),
-                      model.analysis._tag === 'Running'
-                        ? h.button(
-                            [
-                              h.Class('lab-quiet'),
-                              h.OnClick(Message.ClickedCancel()),
-                            ],
-                            ['Cancel'],
-                          )
-                        : h.empty,
-                      h.button(
-                        [
-                          h.Class('lab-quiet'),
-                          h.OnClick(Message.ClickedReset()),
-                        ],
-                        ['Reset'],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
+            [headerView(model, inputs.mode(), Option.none(), h)],
           ),
         onSome: comparison => {
           const selection = selected(model, comparison)
@@ -1147,82 +1163,7 @@ export const makeReview = (cases: ReadonlyArray<ComparisonCase>) => {
           return h.div(
             [h.Class('lab')],
             [
-              h.header(
-                [h.Class('lab-header')],
-                [
-                  inputs.mode(),
-                  h.select(
-                    [
-                      h.AriaLabel('Comparison'),
-                      h.Class('lab-program'),
-                      h.OnChange(name => Message.SelectedComparison({ name })),
-                    ],
-                    Array.map(cases, (scenario, index) =>
-                      h.option(
-                        [
-                          h.Value(scenario.name),
-                          h.Selected(
-                            scenario.name === model.scenario ||
-                              (model.scenario === '' && index === 0),
-                          ),
-                        ],
-                        [scenario.name],
-                      ),
-                    ),
-                  ),
-                  h.div(
-                    [h.Class('lab-header-end')],
-                    [
-                      h.span(
-                        [h.Class('lab-count')],
-                        [
-                          `${comparison.findings.length} findings · ${comparison.counters.pairs} pairs · ${model.analysis._tag === 'Completed' ? statusLabel(comparison) : analysisLabel(model.analysis)}`,
-                        ],
-                      ),
-                      h.div(
-                        [h.Class('lab-depth')],
-                        [
-                          h.span([], ['depth']),
-                          h.button(
-                            [
-                              h.AriaLabel('Fewer comparison steps'),
-                              h.Disabled(model.depth === 0),
-                              h.OnClick(Message.ClickedShallower()),
-                            ],
-                            ['−'],
-                          ),
-                          h.output([], [`${model.depth}`]),
-                          h.button(
-                            [
-                              h.AriaLabel('More comparison steps'),
-                              h.Disabled(comparison.status !== 'depth-limit'),
-                              h.OnClick(Message.ClickedDeeper()),
-                            ],
-                            ['+'],
-                          ),
-                        ],
-                      ),
-                      model.analysis._tag === 'Running' ||
-                      model.replay._tag === 'Running'
-                        ? h.button(
-                            [
-                              h.Class('lab-quiet'),
-                              h.OnClick(Message.ClickedCancel()),
-                            ],
-                            ['Cancel'],
-                          )
-                        : h.empty,
-                      h.button(
-                        [
-                          h.Class('lab-quiet'),
-                          h.OnClick(Message.ClickedReset()),
-                        ],
-                        ['Reset'],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+              headerView(model, inputs.mode(), Option.some(comparison), h),
               h.div(
                 [h.Class('comparison-coverage'), h.Role('status')],
                 [

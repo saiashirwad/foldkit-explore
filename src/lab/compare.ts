@@ -10,7 +10,9 @@ import {
   type ReachStatus,
   type SuccessorStatus,
   type Transition,
+  isPendingRequest,
   limit,
+  occurrenceOf,
   registerProperties,
   remaining,
   transitionEvidence,
@@ -32,6 +34,7 @@ import {
   type CommandDescription,
   type Observation,
   commandKey,
+  describeCommand,
   describeCommands,
   freezeCommands,
   observationOf,
@@ -333,6 +336,18 @@ const commandsKey = (commands: ReadonlyArray<CommandDescription>): string => {
   return key
 }
 
+const screenKeys = new WeakMap<Observation['screen'], string>()
+
+const screenKey = (screen: Observation['screen']): string => {
+  const known = screenKeys.get(screen)
+  if (known !== undefined) {
+    return known
+  }
+  const key = canonical(screen)
+  screenKeys.set(screen, key)
+  return key
+}
+
 const commandDifference = (
   before: ReadonlyArray<CommandDescription>,
   after: ReadonlyArray<CommandDescription>,
@@ -550,21 +565,14 @@ export const createComparison = <
         }
       }
       const { index, command } = transition.request
-      if (
-        !Number.isInteger(index) ||
-        index < 0 ||
-        node.pending[index] !== command
-      ) {
+      if (!isPendingRequest(node.pending, transition.request)) {
         throw new Error(
           `${program.name}: answer must select a pending Command from this state.`,
         )
       }
       const selectedKey = commandKey(command)
-      const occurrence = Array.filter(
-        node.pending.slice(0, index),
-        pending => commandKey(pending) === selectedKey,
-      ).length
-      const description = { name: command.name, args: command.args ?? {} }
+      const occurrence = occurrenceOf(node.pending, transition.request)
+      const description = describeCommand(command)
       return {
         transition,
         evidence: {
@@ -747,7 +755,8 @@ export const createComparison = <
     if (before === undefined || after === undefined) {
       return
     }
-    const key = canonical([before.screen, after.screen])
+    // NOTE: This is canonical([before.screen, after.screen]) from cached parts.
+    const key = `[${screenKey(before.screen)},${screenKey(after.screen)}]`
     const deltas = screenDeltas.get(key) ?? changes(before.screen, after.screen)
     screenDeltas.set(key, deltas)
     Array.forEach(deltas, change => {
@@ -1014,14 +1023,20 @@ export const createComparison = <
     queue.push(pair)
     return pair
   }
+  const withinWork = (): boolean => {
+    if (transitions() >= work.limits.transitions) {
+      stopped.status = 'transition-limit'
+      return false
+    }
+    if (work.enumerationWork >= work.limits.enumerationWork) {
+      stopped.status = 'enumeration-limit'
+      return false
+    }
+    return true
+  }
   const initialize = (): boolean => {
     if (startBuffer.value === undefined) {
-      if (transitions() >= work.limits.transitions) {
-        stopped.status = 'transition-limit'
-        return false
-      }
-      if (work.enumerationWork >= work.limits.enumerationWork) {
-        stopped.status = 'enumeration-limit'
+      if (!withinWork()) {
         return false
       }
       const step = starts.next()
@@ -1220,12 +1235,7 @@ export const createComparison = <
       cursor.iterator = enumerate(next)
       cursor.status = 'partial'
     }
-    if (transitions() >= work.limits.transitions) {
-      stopped.status = 'transition-limit'
-      return false
-    }
-    if (work.enumerationWork >= work.limits.enumerationWork) {
-      stopped.status = 'enumeration-limit'
+    if (!withinWork()) {
       return false
     }
     const result = cursor.iterator?.next()

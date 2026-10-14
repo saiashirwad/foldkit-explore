@@ -140,10 +140,9 @@ const cardsOf = (model: Model): ReadonlyArray<Card> =>
     onNone: () => [],
     onSome: snapshot => {
       const byId = new Map(snapshot.states.map(state => [state.id, state]))
+      const byKey = new Map(snapshot.states.map(state => [state.key, state]))
       const resolveKnown = (address: Address) =>
-        snapshot.states.find(
-          state => canonical(state.address) === canonical(address),
-        )?.id
+        byKey.get(canonical(address))?.id
       const place = (
         slot: string,
         home: string,

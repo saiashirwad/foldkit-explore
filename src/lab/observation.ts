@@ -34,13 +34,16 @@ export const commandKey = (command: DescribedCommand): string =>
 
 // NOTE: Foldkit identifies Command definitions by name, so those names must be
 // unique within a program. Repeated invocations remain separate occurrences.
+export const describeCommand = (
+  command: DescribedCommand,
+): CommandDescription => ({
+  name: command.name,
+  args: command.args ?? {},
+})
+
 export const describeCommands = (
   pending: ReadonlyArray<DescribedCommand>,
-): ReadonlyArray<CommandDescription> =>
-  Array.map(pending, command => ({
-    name: command.name,
-    args: command.args ?? {},
-  }))
+): ReadonlyArray<CommandDescription> => Array.map(pending, describeCommand)
 
 export const observationOf = (
   inspected: Readonly<{

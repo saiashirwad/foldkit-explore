@@ -18,8 +18,17 @@ export type RunResult<Value> = Readonly<{
   maybeValue: Option.Option<Value>
 }>
 
+// NOTE: One identity remembers frozen references across snapshots, so data
+// already frozen by an earlier snapshot is not rescanned. Clearing its buckets
+// keeps it from holding those snapshots.
+const snapshots = makeIdentity()
+
 export const immutable = <Value>(value: Value): Value => {
-  makeIdentity().of(value, 'analysis snapshot')
+  try {
+    snapshots.of(value, 'analysis snapshot')
+  } finally {
+    snapshots.clear()
+  }
   return value
 }
 

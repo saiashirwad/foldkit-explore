@@ -31,6 +31,7 @@ import { type InputDomain, inspect } from './interactions'
 import {
   type Observation,
   commandKey,
+  describeCommand,
   describeCommands,
   freezeCommands,
   observationOf,
@@ -108,6 +109,28 @@ export const remaining = <Message>(
         pending,
         (_command, index) => index !== transition.request.index,
       )
+
+export const isPendingRequest = <Message>(
+  pending: Update.Commands<Message>,
+  request: Request,
+): boolean =>
+  Number.isInteger(request.index) &&
+  request.index >= 0 &&
+  pending[request.index] === request.command
+
+// NOTE: The occurrence counts identical requests before the selected index.
+export const occurrenceOf = <Message>(
+  pending: Update.Commands<Message>,
+  request: Request,
+): number => {
+  const selectedKey = commandKey(request.command)
+  return Array.filter(
+    pending.slice(0, request.index),
+    command =>
+      command.name === request.command.name &&
+      commandKey(command) === selectedKey,
+  ).length
+}
 
 // NOTE: Foldkit identifies Commands by name. Definitions used in one program
 // must have unique names; matching a definition recovers its typed arguments.
@@ -196,11 +219,7 @@ export const transitionEvidence = <Message>(
       ? Option.none()
       : Option.some({
           ...transition.request,
-          occurrence: Array.filter(
-            pending.slice(0, transition.request.index),
-            command =>
-              commandKey(command) === commandKey(transition.request.command),
-          ).length,
+          occurrence: occurrenceOf(pending, transition.request),
         }),
 })
 
@@ -242,6 +261,12 @@ export const StepSnapshot = Schema.Struct({
   to: Schema.String,
 })
 export type Step = typeof StepSnapshot.Type
+export const SuccessorStatus = Schema.Literals([
+  'unseen',
+  'partial',
+  'complete',
+])
+export type SuccessorStatus = typeof SuccessorStatus.Type
 export const StateSnapshot = Schema.Struct({
   id: Schema.String,
   model: Schema.Unknown,
@@ -253,17 +278,18 @@ export const StateSnapshot = Schema.Struct({
     Schema.Struct({ name: Schema.String, args: Schema.String }),
   ),
   next: Schema.Array(StepSnapshot),
-  successorStatus: Schema.Literals(['unseen', 'partial', 'complete']),
+  successorStatus: SuccessorStatus,
 })
 export type StateSnapshot = typeof StateSnapshot.Type
-export type ReachStatus =
-  | 'complete'
-  | 'depth-limit'
-  | 'state-limit'
-  | 'transition-limit'
-  | 'enumeration-limit'
-  | 'model-error'
-export type SuccessorStatus = 'unseen' | 'partial' | 'complete'
+export const ReachStatus = Schema.Literals([
+  'complete',
+  'depth-limit',
+  'state-limit',
+  'transition-limit',
+  'enumeration-limit',
+  'model-error',
+])
+export type ReachStatus = typeof ReachStatus.Type
 
 export type Reach = Readonly<{
   states: ReadonlyArray<string>
@@ -288,14 +314,7 @@ export type FixtureOptions = Readonly<{
 }>
 export const ReachSnapshot = Schema.Struct({
   states: Schema.Array(Schema.String),
-  status: Schema.Literals([
-    'complete',
-    'depth-limit',
-    'state-limit',
-    'transition-limit',
-    'enumeration-limit',
-    'model-error',
-  ]),
+  status: ReachStatus,
   counters: Schema.Struct({
     states: Schema.Number,
     transitions: Schema.Number,
@@ -370,7 +389,7 @@ export const CheckReport = Schema.Struct({
     enumeration: Schema.Array(
       Schema.Struct({
         state: Schema.String,
-        status: Schema.Literals(['unseen', 'partial', 'complete']),
+        status: SuccessorStatus,
       }),
     ),
     assumptions: Schema.Array(Schema.String),
@@ -614,6 +633,11 @@ export const make = <Model, Message, Input = void>(
   const fixtureOptions = new Map<string, ReadonlyArray<string>>()
   const keyOf = new Map<string, string>()
   const lifecycle = { disposed: false }
+  const assertOpen = () => {
+    if (lifecycle.disposed) {
+      throw new Error('Atlas session is disposed.')
+    }
+  }
   const revision = { value: 0 }
   const results = new Map<
     string,
@@ -640,9 +664,7 @@ export const make = <Model, Message, Input = void>(
   }
 
   const nodeOf = (id: string): Node<Model, Message, Input> => {
-    if (lifecycle.disposed) {
-      throw new Error('Atlas session is disposed.')
-    }
+    assertOpen()
     return pipe(
       Option.fromNullishOr(nodes.get(id)),
       Option.getOrThrowWith(() => new Error(`${program.name} has no ${id}.`)),
@@ -664,6 +686,21 @@ export const make = <Model, Message, Input = void>(
     inspections.set(key, result)
     return result
   }
+
+  const nextStateOf = (
+    node: Node<Model, Message, Input>,
+  ): NextState<Model, Message, Input> => ({
+    input: node.input,
+    model: node.model,
+    pending: node.pending,
+    interactions:
+      environment.inputs === undefined
+        ? {}
+        : Record.fromIterableWith(
+            inspection(node).interactions,
+            ({ key, message }) => [key, message],
+          ),
+  })
 
   const learn = (decisions: ReadonlyArray<Decision>) =>
     Array.forEach(decisions, ({ fixture, option }) => {
@@ -809,9 +846,7 @@ export const make = <Model, Message, Input = void>(
     }
     if (
       value.kind === 'Answer' &&
-      (!Number.isInteger(value.request.index) ||
-        value.request.index < 0 ||
-        node.pending[value.request.index] !== value.request.command)
+      !isPendingRequest(node.pending, value.request)
     ) {
       throw new Error(
         `${program.name}: answer must select a pending Command from this state.`,
@@ -862,20 +897,7 @@ export const make = <Model, Message, Input = void>(
             done: true,
             maybeFailure: Option.none(),
           }
-        : source(() =>
-            next({
-              input: node.input,
-              model: node.model,
-              pending: node.pending,
-              interactions:
-                environment.inputs === undefined
-                  ? {}
-                  : Record.fromIterableWith(
-                      inspection(node).interactions,
-                      ({ key, message }) => [key, message],
-                    ),
-            }),
-          )
+        : source(() => next(nextStateOf(node)))
     sources.set(id, current)
     return current
   }
@@ -930,13 +952,6 @@ export const make = <Model, Message, Input = void>(
     }
   }
 
-  const finish = <Value>(iterator: Generator<void, Value>): Value => {
-    const cursor = { step: iterator.next() }
-    while (!cursor.step.done) {
-      cursor.step = iterator.next()
-    }
-    return cursor.step.value
-  }
   const knownStep = <Value>(outcome: Outcome<Value>): Option.Option<Step> =>
     preparedArrivals.get(outcome)?.maybeStep ?? Option.none()
 
@@ -985,7 +1000,7 @@ export const make = <Model, Message, Input = void>(
   }
 
   const successors = (state: string, limits?: Limits): ReadonlyArray<Step> =>
-    finish(probe(state, limits))
+    finishReplay(probe(state, limits))
 
   const runSteps = function* (
     requestedDepth: number,
@@ -993,9 +1008,7 @@ export const make = <Model, Message, Input = void>(
     override: Limits = {},
     captureErrors = false,
   ): Generator<void, SearchResult> {
-    if (lifecycle.disposed) {
-      throw new Error('Atlas session is disposed.')
-    }
+    assertOpen()
     const depth = limit(requestedDepth, 'Depth')
     const bound = limitsOf(override, limits)
     const cacheKey = `${search} ${depth} ${bound.states} ${bound.transitions} ${bound.enumerationWork} ${captureErrors}`
@@ -1034,6 +1047,16 @@ export const make = <Model, Message, Input = void>(
     }
 
     const errors: Array<typeof CheckError.Type> = []
+    const recordError = (error: unknown, maybeState: Option.Option<string>) => {
+      if (!captureErrors) {
+        throw error
+      }
+      errors.push({
+        reason: error instanceof Error ? error.message : String(error),
+        maybeState,
+      })
+      progress.stopped = 'model-error'
+    }
     const attempt = (
       prepare: () => PreparedArrival<Model, Message, Input>,
       maybeState: Option.Option<string> = Option.none(),
@@ -1041,14 +1064,7 @@ export const make = <Model, Message, Input = void>(
       try {
         return prepare()
       } catch (error) {
-        if (!captureErrors) {
-          throw error
-        }
-        errors.push({
-          reason: error instanceof Error ? error.message : String(error),
-          maybeState,
-        })
-        progress.stopped = 'model-error'
+        recordError(error, maybeState)
         return undefined
       }
     }
@@ -1079,14 +1095,7 @@ export const make = <Model, Message, Input = void>(
           return additional <= available
         })
       } catch (error) {
-        if (!captureErrors) {
-          throw error
-        }
-        errors.push({
-          reason: error instanceof Error ? error.message : String(error),
-          maybeState,
-        })
-        progress.stopped = 'model-error'
+        recordError(error, maybeState)
         return { kind: 'limit' }
       }
       const item = readResult.item
@@ -1384,7 +1393,7 @@ export const make = <Model, Message, Input = void>(
     depth: number,
     search: Search = 'breadth',
     limits?: Limits,
-  ): SearchResult => finish(runSteps(depth, search, limits))
+  ): SearchResult => finishReplay(runSteps(depth, search, limits))
 
   const reach = (
     depth: number,
@@ -1497,9 +1506,7 @@ export const make = <Model, Message, Input = void>(
     address: Address,
     capture: (step: Step) => void = () => undefined,
   ): Generator<void, Option.Option<string>> {
-    if (lifecycle.disposed) {
-      throw new Error('Atlas session is disposed.')
-    }
+    assertOpen()
     yield
     identity.of(address, 'replay address')
     if (!Schema.is(Address)(address)) {
@@ -1576,19 +1583,7 @@ export const make = <Model, Message, Input = void>(
         }
         const node = nodeOf(current.id)
         const transition = yield* replayChoicesSteps(
-          () =>
-            next({
-              input: node.input,
-              model: node.model,
-              pending: node.pending,
-              interactions:
-                environment.inputs === undefined
-                  ? {}
-                  : Record.fromIterableWith(
-                      inspection(node).interactions,
-                      ({ key, message }) => [key, message],
-                    ),
-            }),
+          () => next(nextStateOf(node)),
           hop.decisions,
         )
         if (transition.kind !== hop.kind) {
@@ -1610,10 +1605,7 @@ export const make = <Model, Message, Input = void>(
         }
         if (
           transition.kind === 'Answer' &&
-          (!Number.isInteger(transition.request.index) ||
-            transition.request.index < 0 ||
-            node.pending[transition.request.index] !==
-              transition.request.command)
+          !isPendingRequest(node.pending, transition.request)
         ) {
           throw new ReplayDivergenceError(
             'request',
@@ -1661,9 +1653,7 @@ export const make = <Model, Message, Input = void>(
     replayOptions?: ReplayOptions,
   ): Generator<void, EvidenceArtifact> => {
     const verify = function* (): Generator<void, EvidenceArtifact> {
-      if (lifecycle.disposed) {
-        throw new Error('Atlas session is disposed.')
-      }
+      assertOpen()
       yield
       assertEvidenceIdentity(artifact, identity)
       const address: Array<Hop> = []
@@ -1802,10 +1792,7 @@ export const make = <Model, Message, Input = void>(
             maybeRequest: Option.map(evidence.maybeRequest, request => ({
               index: request.index,
               occurrence: request.occurrence,
-              command: {
-                name: request.command.name,
-                args: request.command.args ?? {},
-              },
+              command: describeCommand(request.command),
             })),
           },
         })
@@ -1895,7 +1882,7 @@ export const make = <Model, Message, Input = void>(
   }
 
   const check = (depth: number, limits?: Limits): CheckReport =>
-    finish(checkSteps(depth, limits))
+    finishReplay(checkSteps(depth, limits))
 
   const groupSteps = function* (
     states: ReadonlyArray<string>,
@@ -1919,7 +1906,7 @@ export const make = <Model, Message, Input = void>(
   }
 
   const groups = (states: ReadonlyArray<string>): ReadonlyArray<Group> =>
-    finish(groupSteps(states))
+    finishReplay(groupSteps(states))
 
   const describeReach = (depth: number): string => {
     const { reach: reached, edges } = run(depth, 'breadth')
@@ -1967,6 +1954,12 @@ export const make = <Model, Message, Input = void>(
         ? 'unseen'
         : 'partial'
   }
+  const pending = (id: string): ReadonlyArray<PendingCommand> =>
+    Array.map(nodeOf(id).pending, command => ({
+      name: command.name,
+      args: formatValue(command.args ?? {}),
+    }))
+
   const snapshotSteps = function* (): Generator<
     void,
     ReadonlyArray<StateSnapshot>
@@ -1981,17 +1974,15 @@ export const make = <Model, Message, Input = void>(
         address: address(node.id),
         key: key(node.id),
         trace: node.trace,
-        pending: Array.map(node.pending, command => ({
-          name: command.name,
-          args: formatValue(command.args ?? {}),
-        })),
+        pending: pending(node.id),
         next: knownSuccessors(node.id),
         successorStatus: successorStatus(node.id),
       })
     }
     return result
   }
-  const snapshot = (): ReadonlyArray<StateSnapshot> => finish(snapshotSteps())
+  const snapshot = (): ReadonlyArray<StateSnapshot> =>
+    finishReplay(snapshotSteps())
 
   return {
     name: program.name,
@@ -2022,11 +2013,7 @@ export const make = <Model, Message, Input = void>(
     replayAddressSteps,
     replayEvidence,
     replayEvidenceSteps,
-    pending: id =>
-      Array.map(nodeOf(id).pending, command => ({
-        name: command.name,
-        args: formatValue(command.args ?? {}),
-      })),
+    pending,
     encode: id => encodeModel(nodeOf(id).model),
     fixtures: () =>
       Array.map(Array.fromIterable(fixtureOptions), ([name, options]) => ({
