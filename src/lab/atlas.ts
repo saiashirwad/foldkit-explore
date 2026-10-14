@@ -5,6 +5,18 @@ import { defineView } from 'foldkit/submodel'
 
 import { canonical } from './canonical'
 import { formatValue } from './display'
+import {
+  type EvidenceArtifact,
+  EvidenceStep,
+  type ReplayIdentity,
+  assertEvidenceIdentity,
+  assertReplayIdentity,
+  assertSameEvidence,
+  evidenceArtifact,
+  evidenceCommands,
+  evidenceExecution,
+} from './evidence'
+import { decodeEvidenceData, encodeEvidenceData } from './evidence-data'
 import { InvalidModelError } from './execution-error'
 import {
   type Choices,
@@ -23,6 +35,12 @@ import {
   freezeCommands,
   observationOf,
 } from './observation'
+import {
+  ReplayDivergenceError,
+  type ReplayOptions,
+  boundedReplaySteps,
+  finishReplay,
+} from './replay'
 
 // PROGRAM
 
@@ -215,29 +233,6 @@ export type Hop = typeof Hop.Type
 
 export const Address = Schema.Array(Hop)
 export type Address = typeof Address.Type
-
-const isSameHop = (left: Hop, right: Hop): boolean =>
-  left.kind === right.kind &&
-  left.decisions.length === right.decisions.length &&
-  Array.every(left.decisions, (decision, index) => {
-    const other = right.decisions[index]
-    return (
-      other !== undefined &&
-      other.fixture === decision.fixture &&
-      other.option === decision.option
-    )
-  })
-
-const isSameAddress = (trace: ReadonlyArray<Hop>, address: Address): boolean =>
-  trace.length === address.length &&
-  trace.every((hop, index) => {
-    const other = address[index]
-    return (
-      other !== undefined &&
-      isSameHop(hop, other) &&
-      canonical(hop.maybeMessage) === canonical(other.maybeMessage)
-    )
-  })
 
 // ATLAS
 
@@ -433,8 +428,27 @@ export type Atlas = Readonly<{
   trace: (state: string) => ReadonlyArray<Step>
   address: (state: string) => Address
   key: (state: string) => string
-  resolve: (address: Address) => Option.Option<string>
-  resolveSteps: (address: Address) => Generator<void, Option.Option<string>>
+  resolve: (address: Address, options?: ReplayOptions) => Option.Option<string>
+  resolveSteps: (
+    address: Address,
+    options?: ReplayOptions,
+  ) => Generator<void, Option.Option<string>>
+  evidence: (state: string, identity: ReplayIdentity) => EvidenceArtifact
+  replayAddressSteps: (
+    address: Address,
+    identity: ReplayIdentity,
+    options?: ReplayOptions,
+  ) => Generator<void, EvidenceArtifact>
+  replayEvidence: (
+    artifact: EvidenceArtifact,
+    identity: ReplayIdentity,
+    options?: ReplayOptions,
+  ) => EvidenceArtifact
+  replayEvidenceSteps: (
+    artifact: EvidenceArtifact,
+    identity: ReplayIdentity,
+    options?: ReplayOptions,
+  ) => Generator<void, EvidenceArtifact>
   pending: (state: string) => ReadonlyArray<PendingCommand>
   encode: (state: string) => unknown
   fixtures: () => ReadonlyArray<FixtureOptions>
@@ -609,8 +623,21 @@ export const make = <Model, Message, Input = void>(
   const encodeMessage = Schema.encodeSync(program.Message)
   const decodeMessage = Schema.decodeUnknownOption(program.Message)
   const encodeModel = Schema.encodeSync(program.Model)
-  const encodeAddress = Schema.encodeSync(Address)
   const view = defineView<Model, Message>(program.view)
+  const encodeReplayMessage = (message: Message): unknown => {
+    const encoded = encodeMessage(message)
+    const decoded = decodeMessage(encoded)
+    if (
+      Option.isNone(decoded) ||
+      canonical(decoded.value) !== canonical(message)
+    ) {
+      throw new ReplayDivergenceError(
+        'message',
+        `${program.name}: the Message codec cannot faithfully replay this value.`,
+      )
+    }
+    return encoded
+  }
 
   const nodeOf = (id: string): Node<Model, Message, Input> => {
     if (lifecycle.disposed) {
@@ -776,12 +803,15 @@ export const make = <Model, Message, Input = void>(
       return known
     }
     const { decisions, value } = outcome
+    identity.of(value.message, `${program.name}.Message`)
     if (!isMessage(value.message)) {
       throw new Error(`${program.name}: next returned an invalid Message.`)
     }
     if (
       value.kind === 'Answer' &&
-      node.pending[value.request.index] !== value.request.command
+      (!Number.isInteger(value.request.index) ||
+        value.request.index < 0 ||
+        node.pending[value.request.index] !== value.request.command)
     ) {
       throw new Error(
         `${program.name}: answer must select a pending Command from this state.`,
@@ -801,7 +831,7 @@ export const make = <Model, Message, Input = void>(
     const prepared = prepare({
       kind: value.kind,
       decisions,
-      maybeMessage: Option.none(),
+      maybeMessage: Option.some(encodeReplayMessage(value.message)),
       label:
         value.kind === 'Move'
           ? label
@@ -907,12 +937,6 @@ export const make = <Model, Message, Input = void>(
     }
     return cursor.step.value
   }
-  const pull = <Value>(
-    current: Source<Value>,
-    index: number,
-    charge?: (work: number) => boolean,
-  ): Read<Value> => finish(pullSteps(current, index, charge))
-
   const knownStep = <Value>(outcome: Outcome<Value>): Option.Option<Step> =>
     preparedArrivals.get(outcome)?.maybeStep ?? Option.none()
 
@@ -1369,6 +1393,7 @@ export const make = <Model, Message, Input = void>(
   ): Reach => run(depth, search, limits).reach
 
   const interact = (id: string, message: unknown): Option.Option<string> => {
+    identity.of(message, `${program.name}.Message`)
     if (!isMessage(message)) {
       return Option.none()
     }
@@ -1378,7 +1403,7 @@ export const make = <Model, Message, Input = void>(
         prepare({
           kind: 'Event',
           decisions: [],
-          maybeMessage: Option.some(encodeMessage(message)),
+          maybeMessage: Option.some(encodeReplayMessage(message)),
           label: tagOf(message),
           ...after(node, send(message)),
         }),
@@ -1398,111 +1423,156 @@ export const make = <Model, Message, Input = void>(
     if (known !== undefined) {
       return known
     }
-    const encoded = JSON.stringify(encodeAddress(address(id)))
+    const encoded = canonical(address(id))
     keyOf.set(id, encoded)
     return encoded
   }
 
-  const resolveNext = (id: string, hop: Hop): Option.Option<string> => {
-    const current = sourceOf(id)
-    const cursor = { index: 0 }
-    while (true) {
-      const item = pull(current, cursor.index)
-      if (item.kind !== 'value') {
-        return Option.none()
-      }
+  const frameEvidence = (step: Step): EvidenceStep => {
+    const node = nodeOf(step.to)
+    const execution = evidenceExecution(
+      node.input,
+      node.model,
+      encodeModel(node.model),
+      node.pending,
+      observationOf(inspection(node), node.pending),
+    )
+    if (step.kind === 'Start') {
+      return EvidenceStep.Start({
+        decisions: step.decisions,
+        execution,
+        issued: evidenceCommands(node.pending),
+      })
+    }
+    const event = messages.get(step)
+    if (event === undefined) {
+      throw new ReplayDivergenceError(
+        'evidence',
+        'The selected step has no recorded execution evidence.',
+      )
+    }
+    const encodedMessage = encodeReplayMessage(event.message)
+    if (step.kind === 'Event') {
+      const decoded = Option.getOrThrow(decodeMessage(encodedMessage))
       if (
-        isSameHop(
-          {
-            ...hop,
-            kind: item.outcome.value.kind,
-            decisions: item.outcome.decisions,
-          },
-          hop,
-        )
+        canonical(encodeEvidenceData(decoded)) !==
+        canonical(encodeEvidenceData(event.message))
       ) {
-        return Option.some(
-          publishArrival(prepareNext(nodeOf(id), item.outcome)).to,
+        throw new ReplayDivergenceError(
+          'message',
+          'An Event Message codec must preserve its supported own data representation for evidence replay.',
         )
       }
-      cursor.index += 1
     }
+    const fields = {
+      decisions: step.decisions,
+      message: encodeEvidenceData(event.message),
+      encodedMessage: encodeEvidenceData(encodedMessage),
+      execution,
+      issued: evidenceCommands(event.evidence.issued),
+    }
+    if (step.kind === 'Answer') {
+      const request = Option.getOrThrow(event.evidence.maybeRequest)
+      return EvidenceStep.Answer({
+        ...fields,
+        request: {
+          index: request.index === 0 ? 0 : request.index,
+          occurrence: request.occurrence,
+          command: {
+            name: request.command.name,
+            args: encodeEvidenceData(request.command.args ?? {}),
+          },
+        },
+      })
+    }
+    return step.kind === 'Event'
+      ? EvidenceStep.Event(fields)
+      : EvidenceStep.Move(fields)
   }
 
-  const follow = (id: string, hop: Hop): Option.Option<string> =>
-    Option.match(hop.maybeMessage, {
-      onNone: () => resolveNext(id, hop),
-      onSome: encoded =>
-        Option.flatMap(decodeMessage(encoded), message =>
-          interact(id, message),
-        ),
-    })
+  const evidence = (id: string, identity: ReplayIdentity): EvidenceArtifact =>
+    evidenceArtifact(identity, Array.map(nodeOf(id).trace, frameEvidence))
 
-  const resolveStart = (hop: Hop): Option.Option<string> => {
-    const cursor = { index: 0 }
-    while (true) {
-      const item = pull(startSource, cursor.index)
-      if (item.kind !== 'value') {
-        return Option.none()
-      }
-      const step = publishArrival(prepareStart(item.outcome))
-      if (isSameHop(step, hop)) {
-        return Option.some(step.to)
-      }
-      cursor.index += 1
-    }
-  }
-
-  const resolve = (address: Address): Option.Option<string> =>
-    Array.match(address, {
-      onEmpty: () => Option.none(),
-      onNonEmpty: ([start, ...hops]) =>
-        Array.reduce(hops, resolveStart(start), (maybeId, hop) =>
-          Option.flatMap(maybeId, id => follow(id, hop)),
-        ),
-    })
-
-  const resolveSteps = function* (
+  const selectedReplaySteps = function* (
     address: Address,
+    capture: (step: Step) => void = () => undefined,
   ): Generator<void, Option.Option<string>> {
     if (lifecycle.disposed) {
       throw new Error('Atlas session is disposed.')
     }
-    const known = Array.fromIterable(nodes.values()).find(node =>
-      isSameAddress(node.trace, address),
-    )
-    if (known !== undefined) {
-      return Option.some(known.id)
+    yield
+    identity.of(address, 'replay address')
+    if (!Schema.is(Address)(address)) {
+      throw new ReplayDivergenceError('address', 'Invalid replay address.')
     }
     const first = address[0]
-    if (first === undefined || first.kind !== 'Start') {
-      return Option.none()
+    if (
+      first === undefined ||
+      first.kind !== 'Start' ||
+      Option.isSome(first.maybeMessage)
+    ) {
+      throw new ReplayDivergenceError(
+        'hop-kind',
+        'An address must begin with a Start without a Message.',
+      )
     }
     const input = yield* replayChoicesSteps(environment.starts, first.decisions)
-    const current = {
-      id: publishArrival(
-        prepareStart({ decisions: first.decisions, value: input }),
-      ).to,
-    }
+    yield
+    const start = publishArrival(
+      prepareStart({ decisions: first.decisions, value: input }),
+    )
+    capture(start)
+    const current = { id: start.to }
     for (const hop of address.slice(1)) {
       yield
+      if (hop.kind === 'Start' || Option.isNone(hop.maybeMessage)) {
+        throw new ReplayDivergenceError(
+          'hop-kind',
+          'A transition hop must record its kind and encoded Message.',
+        )
+      }
       if (hop.kind === 'Event') {
-        if (Option.isNone(hop.maybeMessage)) {
-          return Option.none()
+        if (Array.isReadonlyArrayNonEmpty(hop.decisions)) {
+          throw new ReplayDivergenceError(
+            'hop-kind',
+            'An Event cannot contain environment fixture decisions.',
+          )
         }
         const message = decodeMessage(hop.maybeMessage.value)
         if (Option.isNone(message)) {
-          return Option.none()
+          throw new ReplayDivergenceError(
+            'message',
+            'The recorded Event Message cannot be decoded.',
+          )
         }
-        const next = interact(current.id, message.value)
-        if (Option.isNone(next)) {
-          return Option.none()
+        if (
+          canonical(encodeReplayMessage(message.value)) !==
+          canonical(hop.maybeMessage.value)
+        ) {
+          throw new ReplayDivergenceError(
+            'message',
+            'The recorded Event Message encoding changed.',
+          )
         }
-        current.id = next.value
+        const node = nodeOf(current.id)
+        const step = publishArrival(
+          prepare({
+            kind: 'Event',
+            decisions: [],
+            maybeMessage: hop.maybeMessage,
+            label: tagOf(message.value),
+            ...after(node, send(message.value)),
+          }),
+        )
+        current.id = step.to
+        capture(step)
       } else {
         const next = environment.next
         if (next === undefined) {
-          return Option.none()
+          throw new ReplayDivergenceError(
+            'missing-event',
+            'Replay found no environment transitions.',
+          )
         }
         const node = nodeOf(current.id)
         const transition = yield* replayChoicesSteps(
@@ -1522,15 +1592,114 @@ export const make = <Model, Message, Input = void>(
           hop.decisions,
         )
         if (transition.kind !== hop.kind) {
-          return Option.none()
+          throw new ReplayDivergenceError(
+            'hop-kind',
+            'The selected environment transition kind changed.',
+          )
         }
-        current.id = publishArrival(
+        identity.of(transition.message, 'replay Message')
+        if (
+          !isMessage(transition.message) ||
+          canonical(encodeReplayMessage(transition.message)) !==
+            canonical(hop.maybeMessage.value)
+        ) {
+          throw new ReplayDivergenceError(
+            'message',
+            'The selected environment Message changed.',
+          )
+        }
+        if (
+          transition.kind === 'Answer' &&
+          (!Number.isInteger(transition.request.index) ||
+            transition.request.index < 0 ||
+            node.pending[transition.request.index] !==
+              transition.request.command)
+        ) {
+          throw new ReplayDivergenceError(
+            'request',
+            'Replay did not select a valid pending Command occurrence.',
+          )
+        }
+        yield
+        const step = publishArrival(
           prepareNext(node, { decisions: hop.decisions, value: transition }),
-        ).to
+        )
+        current.id = step.to
+        capture(step)
       }
     }
     return Option.some(current.id)
   }
+
+  const resolveSteps = (address: Address, options?: ReplayOptions) =>
+    boundedReplaySteps(selectedReplaySteps(address), address.length, options)
+  const resolve = (
+    address: Address,
+    options?: ReplayOptions,
+  ): Option.Option<string> => finishReplay(resolveSteps(address, options))
+
+  const replayAddressSteps = (
+    address: Address,
+    identity: ReplayIdentity,
+    options?: ReplayOptions,
+  ): Generator<void, EvidenceArtifact> => {
+    const record = function* (): Generator<void, EvidenceArtifact> {
+      assertReplayIdentity(identity)
+      const steps: Array<EvidenceStep> = []
+      yield* selectedReplaySteps(address, step =>
+        steps.push(frameEvidence(step)),
+      )
+      yield
+      return evidenceArtifact(identity, steps)
+    }
+    return boundedReplaySteps(record(), address.length, options)
+  }
+
+  const replayEvidenceSteps = (
+    artifact: EvidenceArtifact,
+    identity: ReplayIdentity,
+    replayOptions?: ReplayOptions,
+  ): Generator<void, EvidenceArtifact> => {
+    const verify = function* (): Generator<void, EvidenceArtifact> {
+      if (lifecycle.disposed) {
+        throw new Error('Atlas session is disposed.')
+      }
+      yield
+      assertEvidenceIdentity(artifact, identity)
+      const address: Array<Hop> = []
+      for (const step of artifact.steps) {
+        yield
+        address.push({
+          kind: step._tag,
+          decisions: step.decisions,
+          maybeMessage:
+            step._tag === 'Start'
+              ? Option.none()
+              : Option.some(decodeEvidenceData(step.encodedMessage)),
+        })
+      }
+      const fresh = make(program, environment, options)
+      try {
+        const actual = yield* fresh.replayAddressSteps(
+          address,
+          identity,
+          replayOptions,
+        )
+        assertSameEvidence(actual, artifact)
+        return actual
+      } finally {
+        fresh.dispose()
+      }
+    }
+    return boundedReplaySteps(verify(), artifact.steps.length, replayOptions)
+  }
+
+  const replayEvidence = (
+    artifact: EvidenceArtifact,
+    identity: ReplayIdentity,
+    options?: ReplayOptions,
+  ): EvidenceArtifact =>
+    finishReplay(replayEvidenceSteps(artifact, identity, options))
 
   const atlasLimits = limits
   const checkSteps = function* (
@@ -1849,6 +2018,10 @@ export const make = <Model, Message, Input = void>(
     key,
     resolve,
     resolveSteps,
+    evidence,
+    replayAddressSteps,
+    replayEvidence,
+    replayEvidenceSteps,
     pending: id =>
       Array.map(nodeOf(id).pending, command => ({
         name: command.name,

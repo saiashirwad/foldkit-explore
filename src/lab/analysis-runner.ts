@@ -3,6 +3,7 @@ import { Cause, Effect, Exit, Option, Scope, Semaphore } from 'effect'
 import { AnalysisStatus } from './analysis-data'
 import { InvalidModelError } from './execution-error'
 import { makeIdentity } from './identity'
+import { ReplayCancelledError } from './replay'
 
 export const CHUNK_SIZE = 128
 
@@ -23,11 +24,13 @@ export const immutable = <Value>(value: Value): Value => {
 }
 
 export const failureStatus = (error: unknown): AnalysisStatus =>
-  error instanceof InvalidModelError
-    ? AnalysisStatus.InvalidModel({ reason: error.message })
-    : AnalysisStatus.Defect({
-        reason: error instanceof Error ? error.message : String(error),
-      })
+  error instanceof ReplayCancelledError
+    ? AnalysisStatus.Cancelled()
+    : error instanceof InvalidModelError
+      ? AnalysisStatus.InvalidModel({ reason: error.message })
+      : AnalysisStatus.Defect({
+          reason: error instanceof Error ? error.message : String(error),
+        })
 
 // NOTE: One chunk returns one Message. The next chunk is declared by update,
 // and a scheduled sleep lets browser input run before acquiring session ownership.

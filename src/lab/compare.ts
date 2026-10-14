@@ -36,6 +36,12 @@ import {
   freezeCommands,
   observationOf,
 } from './observation'
+import {
+  ReplayDivergenceError,
+  type ReplayOptions,
+  boundedReplaySteps,
+  finishReplay,
+} from './replay'
 
 export type ComparisonSide = 'before' | 'after'
 
@@ -159,8 +165,11 @@ export type Comparison = Readonly<{
   setLimits: (limits: ComparisonLimits) => void
   advance: (steps: number) => boolean
   dispose: () => void
-  replay: (trace: ComparisonTrace) => ComparisonTrace
-  replaySteps: (trace: ComparisonTrace) => Generator<void, ComparisonTrace>
+  replay: (trace: ComparisonTrace, options?: ReplayOptions) => ComparisonTrace
+  replaySteps: (
+    trace: ComparisonTrace,
+    options?: ReplayOptions,
+  ) => Generator<void, ComparisonTrace>
   render: <ParentMessage>(
     side: ComparisonSide,
     example: ComparisonExample,
@@ -633,6 +642,7 @@ export const createComparison = <
         isModel(actual.model) &&
         isModel(expected.model) &&
         canonical(actual.input) === canonical(expected.input) &&
+        canonical(actual.model) === canonical(expected.model) &&
         canonical(encodeModel(actual.model)) ===
           canonical(encodeModel(expected.model)) &&
         canonical(actual.pending) === canonical(expected.pending) &&
@@ -1304,13 +1314,16 @@ export const createComparison = <
       progress.running = advance()
     }
   }
-  const replaySteps = function* (
+  const selectedReplaySteps = function* (
     trace: ComparisonTrace,
   ): Generator<void, ComparisonTrace> {
     assertOpen()
     const first = trace[0]
     if (first === undefined || first.kind !== 'Start') {
-      throw new Error('A comparison trace must begin with a shared start.')
+      throw new ReplayDivergenceError(
+        'hop-kind',
+        'A comparison trace must begin with a shared start.',
+      )
     }
     const replayCache: InspectionCache = new Map()
     const replayBefore = makeRuntime(options.before, 'RB', replayCache)
@@ -1347,11 +1360,17 @@ export const createComparison = <
         return undefined
       }
       if (node === undefined) {
-        throw new Error('Comparison replay cannot continue an unmatched side.')
+        throw new ReplayDivergenceError(
+          'hop-kind',
+          'Comparison replay cannot continue an unmatched side.',
+        )
       }
       const next = runtime.next(node)
       if (next === undefined) {
-        throw new Error('Comparison replay found no environment events.')
+        throw new ReplayDivergenceError(
+          'missing-event',
+          'Comparison replay found no environment events.',
+        )
       }
       const transition = yield* replayChoicesSteps(next, event.decisions)
       const selected = runtime.event(node, {
@@ -1362,7 +1381,8 @@ export const createComparison = <
         selected.evidence.key !== event.key ||
         canonical(selected.evidence.message) !== canonical(event.message)
       ) {
-        throw new Error(
+        throw new ReplayDivergenceError(
+          'message',
           'Comparison replay event changed; environment choices must be deterministic.',
         )
       }
@@ -1376,7 +1396,10 @@ export const createComparison = <
       offered: ComparisonEvent,
     ): Generator<void, void> {
       if (node === undefined) {
-        throw new Error('Comparison replay cannot verify an unmatched side.')
+        throw new ReplayDivergenceError(
+          'missing-event',
+          'Comparison replay cannot verify an unmatched side.',
+        )
       }
       const next = runtime.next(node)
       if (next === undefined) {
@@ -1390,13 +1413,15 @@ export const createComparison = <
         }
         const candidate = checkpoint.outcome
         if (count.examined >= work.limits.transitions) {
-          throw new Error(
+          throw new ReplayDivergenceError(
+            'missing-event',
             'Comparison replay cannot verify a missing event within its transition limit.',
           )
         }
         count.examined += 1
         if (runtime.event(node, candidate).evidence.key === offered.key) {
-          throw new Error(
+          throw new ReplayDivergenceError(
+            'missing-event',
             'Comparison replay diverged: a previously missing event is now available.',
           )
         }
@@ -1405,11 +1430,15 @@ export const createComparison = <
     for (const [index, frame] of trace.slice(1).entries()) {
       yield
       if (frame.kind !== 'Transition') {
-        throw new Error('Comparison replay found an unexpected starting frame.')
+        throw new ReplayDivergenceError(
+          'hop-kind',
+          'Comparison replay found an unexpected starting frame.',
+        )
       }
       if (frame.beforeEvent !== undefined && frame.afterEvent === undefined) {
         if (index !== trace.length - 2) {
-          throw new Error(
+          throw new ReplayDivergenceError(
+            'hop-kind',
             'Comparison replay requires unmatched events to be terminal.',
           )
         }
@@ -1417,7 +1446,8 @@ export const createComparison = <
       }
       if (frame.afterEvent !== undefined && frame.beforeEvent === undefined) {
         if (index !== trace.length - 2) {
-          throw new Error(
+          throw new ReplayDivergenceError(
+            'hop-kind',
             'Comparison replay requires unmatched events to be terminal.',
           )
         }
@@ -1461,21 +1491,29 @@ export const createComparison = <
         canonical(frame.beforeIssued) !== canonical(expected.beforeIssued) ||
         canonical(frame.afterIssued) !== canonical(expected.afterIssued)
       ) {
-        throw new Error(
+        throw new ReplayDivergenceError(
+          'evidence',
           'Comparison replay diverged from its recorded execution.',
         )
       }
     }
     return frames
   }
-  const replay = (trace: ComparisonTrace): ComparisonTrace => {
-    const iterator = replaySteps(trace)
-    const cursor = { step: iterator.next() }
-    while (!cursor.step.done) {
-      cursor.step = iterator.next()
-    }
-    return cursor.step.value
-  }
+  const replaySteps = (
+    trace: ComparisonTrace,
+    options?: ReplayOptions,
+  ): Generator<void, ComparisonTrace> =>
+    boundedReplaySteps(selectedReplaySteps(trace), trace.length, {
+      ...options,
+      limits: {
+        ...options?.limits,
+        work: options?.limits?.work ?? work.limits.enumerationWork,
+      },
+    })
+  const replay = (
+    trace: ComparisonTrace,
+    options?: ReplayOptions,
+  ): ComparisonTrace => finishReplay(replaySteps(trace, options))
   const lifecycle = { disposed: false }
   const assertOpen = () => {
     if (lifecycle.disposed) {

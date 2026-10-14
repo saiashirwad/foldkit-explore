@@ -50,7 +50,7 @@ Inputs, Models, and modeled Command arguments must be acyclic data: primitives o
 
 Atlas and Comparison validate and deep-freeze this data before interning it; inputs are checked before `start` runs. Command envelopes and pending queues are shallow-frozen, while their arguments are deep-frozen. Effects are neither traversed nor executed. Update must return new data instead of mutating old data. Reference caching remains proportional to newly replaced objects, not the full Model on each step.
 
-Execution identity preserves record property order, enumerability, and the supported prototypes, and checks equality within hash buckets. Matching and replay use `canonical()` on evidence/codec outputs: it intentionally sorts record keys and normalizes enumerability and ordinary versus null record prototypes, but retains absent fields, `undefined`, `NaN`, signed zero, and Option meaning. Programs and environments must not depend on reference identity, aliasing, descriptor writability/configurability, mutable prototypes, proxy traps, or hidden external state. There is no user-supplied execution abstraction; visual grouping never merges concrete executions.
+Execution identity preserves record property order, enumerability, and the supported prototypes, and checks equality within hash buckets. Matching and compact navigation replay use `canonical()` on codec outputs: it intentionally sorts record keys and normalizes enumerability and ordinary versus null record prototypes, but retains absent fields, `undefined`, `NaN`, signed zero, and Option meaning. Programs and environments must not depend on reference identity, aliasing, descriptor writability/configurability, mutable prototypes, proxy traps, or hidden external state. There is no user-supplied execution abstraction; visual grouping never merges concrete executions.
 
 ## Model one next step
 
@@ -135,6 +135,37 @@ The search modes are breadth-first, depth-first, and 32 deterministic seeded ran
 
 `atlas.knownSuccessors(state)` reads the already admitted successor prefix without doing exploration. `atlas.successors(state, limitsOverride?)` explicitly explores that state's alternatives, bounded by the atlas limits by default; its local state allowance includes the source state. A larger explicit override resumes it. `atlas.successorStatus(state)` is `unseen`, `partial`, or `complete`. Passive rendering and `describe` use cached prefixes instead of completing successor generators.
 
+## Bounded replay and portable evidence
+
+`atlas.resolve(address, options?)` and `resolveSteps` replay only the recorded decisions into that explicitly owned Atlas. They do not search or publish sibling starts or transitions. Start must be first; subsequent hops must be Move, Answer or Event. Every fixture decision must be consumed, and every transition now carries its encoded Message. Old label-only transition addresses are rejected rather than treated as semantic evidence. A replay can retain its selected prefix when interrupted; it does not charge the unrelated exploration counters.
+
+Replay options are `{ limits: { hops, work }, signal?: AbortSignal }`. Defaults are 1,000 hops (including Start) and 1,000,000 total iterator advancements, including completion probes. The checkpointed form composes with the Command runner; `return()` closes suspended generators. `ReplayDivergenceError.reason` distinguishes changed choices, kinds, Messages, occurrences, identity and evidence. `ReplayLimitError` and `ReplayCancelledError` are separate failures, never a successful verification. Message codecs must faithfully round-trip the supported semantic value; a codec that collapses `-0` to `0`, for example, is explicitly rejected for that value.
+
+Addresses remain navigation data, not portable certificates: they cannot establish unchanged initialization, request occurrence, output, observations or program identity. Use a native evidence artifact for those checks:
+
+```ts
+import { parseEvidence, serializeEvidence } from './lab/evidence'
+
+const identity = {
+  program: 'signup@<revision>',
+  environment: 'signup-cases@<revision>',
+  inputEncoding: 'plan@1',
+  modelEncoding: 'signup-model@1',
+  messageEncoding: 'signup-message@1',
+}
+const artifact = atlas.evidence(state, identity)
+const serialized = serializeEvidence(artifact)
+const replayed = atlas.replayEvidence(parseEvidence(serialized), identity, {
+  limits: { hops: 100, work: 10_000 },
+})
+```
+
+Supply explicit, versioned program/environment and encoding identifiers; they are caller assertions, not automatically computed source hashes or a code loader. Replay requires the corresponding Program and Environment. `evidence(state, identity)` passively exports that state's first-discovery trace. `replayAddressSteps(address, identity, options?)` explicitly records a selected path, preserving repeated/self-loop steps; `replayEvidenceSteps` is the cooperative fresh-verification form. Evidence replay owns and disposes a fresh Atlas and does not publish into the original session or alter earlier check reports.
+
+The version-1 `foldkit-explore/evidence` artifact contains no session-local state/pair IDs. It checks each input, raw and codec-encoded Model and Message, initial Commands, selected request name/arguments/index/duplicate occurrence, newly issued and remaining Commands, and structured observation. Commands are only descriptions; their effects never execute. The artifact's `foldkit-data/v1` tagged codec, not ordinary JSON, preserves absent versus present-undefined fields, Option Some/None, signed zero, NaN/infinities, bigint, supported record prototypes, own property order and enumerability (including `Some.value`). It rejects the same lossy representations as execution identity. Event codecs must also round-trip their supported own data representation; native evidence cannot repair a lossy application codec.
+
+Schema validation, JSON parsing, and an individual wide data/fixture/codec operation remain non-preemptible, as does arbitrary application code between yields. The work allowance is not a hard wall-clock or memory cap. This native format is not Quint ITF; an ITF action/choice mapping and explicit state projection remain a separate interoperability adapter.
+
 ## Observations and view-driven exploration
 
 Signup's environment supplies initial plans, a finite `Username` input domain, and a `next` generator that chooses user interactions or Command answers. `src/lab/interactions.ts` uses the public `foldkit/scene` API to render the real view, click enabled buttons, and type configured values into editable textboxes. A recording update captures each emitted Message; the atlas applies the application's real update only after the environment selects that interaction.
@@ -186,7 +217,7 @@ When only one version offers an event, the comparison applies it on that side an
 
 `comparison.status` uses the atlas status vocabulary plus `pair-limit`. The required comparison limits are `depth`, `states` per side, and `transitions`; optional `pairs` defaults to the state limit and `enumerationWork` defaults to 1,000,000. Comparison transition work counts each shared starting alternative once and each before/after next-step alternative separately. Its counters report starts, states on each side, pairs, total alternatives, next-step alternatives on each side, and separate enumeration work (shared starts once and both sides' fixture traversal separately).
 
-`comparison.unfinishedWork` lists the remaining start or pair enumerations. `comparison.resume(limits)` continues retained work; every supplied limit must be at least its previous value. Create a fresh comparison to use smaller limits. `comparison.replay(trace)` constructs fresh program executions from the recorded choices, verifies the events and recorded evidence, and returns the replayed trace.
+`comparison.unfinishedWork` lists the remaining start or pair enumerations. `comparison.resume(limits)` continues retained work; every supplied limit must be at least its previous value. Create a fresh comparison to use smaller limits. `comparison.replay(trace, replayOptions?)` constructs fresh program executions from the recorded choices, verifies the events and recorded evidence, and returns the replayed trace. `replaySteps` exposes cooperative checkpoints. Its default total replay work allowance is the comparison's `enumerationWork` limit, including all fixture work needed to verify an absent counterpart; hop/work overrides and cancellation use the same replay options as Atlas.
 
 “No differences found” in an incomplete comparison describes only the explored executions. Even a complete result remains relative to this environment, observation format, and event-matching contract. This is bounded synchronous UI comparison, not temporal-logic checking, a liveness proof, or a universal equivalence proof.
 
@@ -231,13 +262,15 @@ Every progress/completion carries a monotonically increasing run identifier. Sup
 
 `createComparison(options)` creates an unstarted session (`running` status). `advance(checkpoints)` returns whether the requested limits have finished, and `setLimits` accepts only nondecreasing bounds. The synchronous `compare`/`resume` APIs still run to their declared limits. Atlas's synchronous APIs likewise remain available to headless callers; the UI uses their checkpointed generator counterparts. `dispose()` releases engine iterators and caches.
 
-Cooperative scheduling cannot interrupt arbitrary non-yielding application code, a single wide fixture/Model/codec operation, or final snapshot validation. It is not a hard wall-clock or memory limit. Typed total replay limits and portable evidence remain separate from this runner protocol.
+Cooperative scheduling cannot interrupt arbitrary non-yielding application code, a single wide fixture/Model/codec operation, or final snapshot validation. It is not a hard wall-clock or memory limit. Typed replay allowances bound total selected replay and counterpart-absence work; portable evidence remains separate from the compact UI Addresses and runner snapshots.
 
 ## Layout
 
 | Path | Role |
 | --- | --- |
-| `src/lab/fixture.ts` | Lazy named choices and deterministic replay |
+| `src/lab/fixture.ts` | Lazy named choices and deterministic selected replay |
+| `src/lab/replay.ts` | Shared hop/work allowances and typed replay failures |
+| `src/lab/evidence.ts`, `src/lab/evidence-data.ts` | Versioned portable evidence and lossless native data codec |
 | `src/lab/identity.ts`, `src/lab/canonical.ts` | Execution hash-consing and semantic matching keys |
 | `src/lab/atlas.ts` | Program/environment contracts, bounded graph exploration, properties, and addresses |
 | `src/lab/interactions.ts`, `src/lab/observation.ts` | Scene probing and structured observations |

@@ -1,5 +1,7 @@
 import { Array, Option, Record, Schema } from 'effect'
 
+import { ReplayDivergenceError } from './replay'
+
 // FIXTURE
 
 export type Fixture = Readonly<{
@@ -64,20 +66,33 @@ export function* replaySteps<Output>(
       const decision = decisions[cursor.index]
       if (
         decision === undefined ||
-        cursor.step.value.name !== decision.fixture ||
-        !Object.hasOwn(cursor.step.value.cases, decision.option)
+        cursor.step.value.name !== decision.fixture
       ) {
-        throw new Error(
-          'Fixture replay diverged; choices must be deterministic.',
+        throw new ReplayDivergenceError(
+          'fixture',
+          'Fixture replay diverged: the recorded fixture is no longer available.',
+        )
+      }
+      if (!Object.hasOwn(cursor.step.value.cases, decision.option)) {
+        throw new ReplayDivergenceError(
+          'option',
+          `Fixture replay diverged: option ${JSON.stringify(decision.option)} is no longer available.`,
         )
       }
       yield
       cursor.step = generator.next(cursor.step.value.cases[decision.option])
       cursor.index += 1
     }
-    if (!cursor.step.done || cursor.index !== decisions.length) {
-      throw new Error(
+    if (!cursor.step.done) {
+      throw new ReplayDivergenceError(
+        'incomplete-decisions',
         'Fixture replay ended before its environment choices were complete.',
+      )
+    }
+    if (cursor.index !== decisions.length) {
+      throw new ReplayDivergenceError(
+        'excessive-decisions',
+        'Fixture replay has decisions after its environment completed.',
       )
     }
     return cursor.step.value
