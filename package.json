@@ -2,6 +2,7 @@
   "name": "foldkit-explore",
   "version": "0.1.0",
   "type": "module",
+  "packageManager": "bun@1.4.0",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -9,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "format": "oxfmt",
     "test": "vitest run",
-    "lint": "oxlint src"
+    "lint": "oxlint src scripts",
+    "check:analysis": "bun scripts/check.mjs",
+    "test:browser": "node scripts/browser-smoke.mjs"
   },
   "dependencies": {
     "@effect/platform-browser": "4.0.0",
@@ -23,9 +26,11 @@
     "@foldkit/oxlint-plugin": "0.15.3",
     "@foldkit/vite-plugin": "0.27.0",
     "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "26.6.4",
     "happy-dom": "^20.14.5",
     "oxfmt": "^0.66.0",
     "oxlint": "^1.85.0",
+    "playwright": "1.64.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",

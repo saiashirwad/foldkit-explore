@@ -1,5 +1,5 @@
-import { Array, Option, Record, Schema, pipe } from 'effect'
-import { Update } from 'foldkit'
+import { Array, Cause, Effect, Layer, Option, Record, Schema } from 'effect'
+import { Command, Update } from 'foldkit'
 import {
   type Document,
   type Html,
@@ -9,7 +9,21 @@ import {
 import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 
-import { Address, type Atlas, Search, type Step } from './atlas'
+import { AnalysisStatus, GallerySnapshot } from './analysis-data'
+import {
+  CHUNK_SIZE,
+  failureStatus,
+  immutable,
+  makeRunner,
+} from './analysis-runner'
+import {
+  Address,
+  type Atlas,
+  Search,
+  type StateSnapshot,
+  type Step,
+} from './atlas'
+import { canonical } from './canonical'
 import { formatValue } from './display'
 import * as Review from './review'
 
@@ -29,6 +43,9 @@ export const Model = Schema.Struct({
   maybeSelected: Schema.Option(Schema.String),
   mode: Mode,
   review: Review.Model,
+  runId: Schema.Number,
+  analysis: AnalysisStatus,
+  maybeSnapshot: Schema.Option(GallerySnapshot),
 })
 export type Model = typeof Model.Type
 
@@ -52,6 +69,9 @@ const fresh = (program: string, search: Search = 'breadth'): Model => ({
   maybeSelected: Option.none(),
   mode: 'Explore',
   review: Review.initial(),
+  runId: 0,
+  analysis: AnalysisStatus.Idle(),
+  maybeSnapshot: Option.none(),
 })
 
 const isMatching = (
@@ -89,8 +109,71 @@ export const Message = defineMessageUnion({
   ClickedStep: { slot: Schema.String, state: Schema.String },
   ClickedPin: { state: Schema.String },
   ClickedRestore: { slot: Schema.String },
+  ClickedCancel: {},
+  CompletedAnalyzeGallery: {
+    runId: Schema.Number,
+    status: AnalysisStatus,
+    maybeSnapshot: Schema.Option(GallerySnapshot),
+    positions: Schema.Record(Schema.String, Address),
+  },
+  CompletedDisposeGallery: {
+    runId: Schema.Number,
+    maybeFailure: Schema.Option(AnalysisStatus),
+  },
 })
 export type Message = typeof Message.Type
+
+const toReviewMessage = (message: Review.Message): Message => {
+  const routed = Message.GotReviewMessage({ message })
+  return immutable(routed)
+}
+
+const stateOf = (model: Model, id: string): StateSnapshot =>
+  Option.getOrThrow(
+    Option.flatMap(model.maybeSnapshot, snapshot =>
+      Array.findFirst(snapshot.states, state => state.id === id),
+    ),
+  )
+
+const cardsOf = (model: Model): ReadonlyArray<Card> =>
+  Option.match(model.maybeSnapshot, {
+    onNone: () => [],
+    onSome: snapshot => {
+      const byId = new Map(snapshot.states.map(state => [state.id, state]))
+      const resolveKnown = (address: Address) =>
+        snapshot.states.find(
+          state => canonical(state.address) === canonical(address),
+        )?.id
+      const place = (
+        slot: string,
+        home: string,
+        states: ReadonlyArray<string>,
+      ): Card => ({
+        slot,
+        home,
+        states,
+        state: resolveKnown(model.positions[slot] ?? []) ?? states[0] ?? home,
+      })
+      return Array.filter(
+        [
+          ...Array.flatMap(model.pins, pin => {
+            const home = resolveKnown(pin.address)
+            return home === undefined ? [] : [place(pin.slot, home, [home])]
+          }),
+          ...Array.map(snapshot.groups, group =>
+            place(
+              byId.get(group.home)?.key ?? group.home,
+              group.home,
+              Array.filter(group.states, id =>
+                isMatching(byId.get(id)?.trace ?? [], model.where),
+              ),
+            ),
+          ),
+        ],
+        card => isMatching(byId.get(card.state)?.trace ?? [], model.where),
+      )
+    },
+  })
 
 // VIEW
 
@@ -138,7 +221,7 @@ const filterView = (
     ],
   )
 
-const depthView = (model: Model, atlas: Atlas, h: HtmlBuilder<Message>): Html =>
+const depthView = (model: Model, h: HtmlBuilder<Message>): Html =>
   h.div(
     [h.Class('lab-depth')],
     [
@@ -156,7 +239,11 @@ const depthView = (model: Model, atlas: Atlas, h: HtmlBuilder<Message>): Html =>
         [
           h.AriaLabel('More steps'),
           h.Disabled(
-            atlas.reach(model.depth, model.search).status !== 'depth-limit',
+            model.analysis._tag !== 'Completed' ||
+              !Option.exists(
+                model.maybeSnapshot,
+                snapshot => snapshot.reached.status === 'depth-limit',
+              ),
           ),
           h.OnClick(Message.ClickedDeeper()),
         ],
@@ -190,11 +277,12 @@ const searchView = (model: Model, h: HtmlBuilder<Message>): Html =>
     ),
   )
 
-// NOTE: Arguments are primitives so unchanged previews keep their lazy slot.
+// NOTE: Preview Models come from stable immutable snapshots, not a live Atlas.
 const caseView = (
   atlas: Atlas,
   slot: string,
   state: string,
+  previewModel: unknown,
   isSelected: boolean,
   h: HtmlBuilder<Message>,
 ): Html =>
@@ -218,8 +306,12 @@ const caseView = (
       h.div(
         [h.Class('case-preview')],
         [
-          atlas.render(state, slot, h, caseMessage =>
-            Message.InteractedWithCase({ slot, state, message: caseMessage }),
+          atlas.renderModel(previewModel, slot, h, caseMessage =>
+            Message.InteractedWithCase({
+              slot,
+              state,
+              message: caseMessage,
+            }),
           ),
         ],
       ),
@@ -237,7 +329,14 @@ const gridView = (
     [h.Class('lab-grid'), h.AriaLabel('States')],
     Array.match(cards, {
       onEmpty: () => [
-        h.p([h.Class('lab-empty')], ['No states match these filters.']),
+        h.p(
+          [h.Class('lab-empty')],
+          [
+            model.analysis._tag === 'Completed'
+              ? 'No states match these filters.'
+              : Review.analysisLabel(model.analysis),
+          ],
+        ),
       ],
       onNonEmpty: nonEmpty => [
         ...Array.map(Array.take(nonEmpty, model.limit), card =>
@@ -245,6 +344,7 @@ const gridView = (
             atlas,
             card.slot,
             card.state,
+            stateOf(model, card.state).model,
             Option.exists(maybeSelected, ({ slot }) => slot === card.slot),
             h,
           ]),
@@ -543,20 +643,22 @@ const inspectorDetails = (
 const inspectorView = (
   atlas: Atlas,
   card: Card,
-  depth: number,
-  search: Search,
+  model: Model,
+  snapshot: GallerySnapshot,
   h: HtmlBuilder<Message>,
 ): Html => {
-  const failures = Array.isReadonlyArrayEmpty(atlas.propertyNames)
-    ? []
-    : atlas.check(depth)
-  const reached = atlas.reach(depth, search)
-  const isComplete = reached.status === 'complete'
-  const trace = atlas.trace(card.state)
+  const depth = snapshot.depth
+  const search = snapshot.search
+  const current = stateOf(model, card.state)
+  const maybeCheck = snapshot.maybeCheck
+  const reached = snapshot.reached
+  const isComplete =
+    model.analysis._tag === 'Completed' && reached.status === 'complete'
+  const trace = current.trace
   const distance = trace.length - 1
-  const next = atlas.successors(card.state)
+  const next = current.next
   const nextHint =
-    atlas.successorStatus(card.state) === 'complete'
+    current.successorStatus === 'complete'
       ? 'Click one to step this preview there.'
       : 'Showing explored choices. More alternatives remain unknown at the current search limits.'
   return h.aside(
@@ -610,7 +712,7 @@ const inspectorView = (
         'pending',
         'Waiting on',
         'In-flight Commands. Their replies are listed below.',
-        Array.map(atlas.pending(card.state), ({ name, args }) =>
+        Array.map(current.pending, ({ name, args }) =>
           h.div(
             [h.Class('pending')],
             [
@@ -651,7 +753,7 @@ const inspectorView = (
                     h.span([h.Class('row-label')], [state]),
                     h.span(
                       [h.Class('row-state')],
-                      [`${atlas.pending(state).length} in flight`],
+                      [`${stateOf(model, state).pending.length} in flight`],
                     ),
                   ],
                 ),
@@ -660,39 +762,50 @@ const inspectorView = (
             h,
           )
         : h.empty,
-      inspectorDetails(
-        'Model',
-        '',
-        [modelView(atlas.encode(card.state), h)],
-        h,
-      ),
-      Array.isReadonlyArrayEmpty(atlas.propertyNames)
-        ? h.empty
-        : inspectorDetails(
+      inspectorDetails('Model', '', [modelView(current.encodedModel, h)], h),
+      Option.match(maybeCheck, {
+        onNone: () => h.empty,
+        onSome: check =>
+          inspectorDetails(
             'Properties',
-            failures.length === 0
-              ? 'No violations found'
-              : `${failures.length} failing`,
+            `${check.violations.length} counterexamples · ${check.coverage.reached.status}`,
             [
+              ...Array.map(check.errors, error =>
+                h.p([], [`Modeling error: ${error.reason}`]),
+              ),
               h.ul(
                 [],
-                Array.map(atlas.propertyNames, name =>
+                Array.map(check.properties, property =>
                   h.li(
                     [
                       h.Class(
-                        Array.some(
-                          failures,
-                          failure => failure.property === name,
-                        )
+                        property.verdict === 'counterexample' ||
+                          property.verdict === 'error'
                           ? 'is-failing'
-                          : 'is-holding',
+                          : property.verdict === 'complete'
+                            ? 'is-holding'
+                            : '',
                       ),
                     ],
-                    [name],
+                    [
+                      `${property.name}: ${property.verdict === 'complete' ? 'holds in the declared environment' : property.verdict === 'inconclusive' ? 'no counterexample within limits' : property.verdict === 'not-exercised' ? `not exercised (${property.applicability})` : property.verdict}`,
+                      h.p(
+                        [],
+                        [
+                          `${property.counts.state.evaluated} state checks · ${property.counts.transition.evaluated} transition checks`,
+                        ],
+                      ),
+                      ...Array.map(property.errors, error =>
+                        h.p(
+                          [],
+                          [`${error.kind} ${error.stage}: ${error.reason}`],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              ...Array.map(failures, failure =>
+              ...Array.map(check.violations, failure =>
                 h.section(
                   [],
                   [
@@ -706,12 +819,13 @@ const inspectorView = (
               h.p(
                 [],
                 [
-                  `Breadth-first checks through depth ${depth}, independently of the gallery search. Checked only reached states and transitions, not all possible executions.`,
+                  `Breadth-first check through depth ${check.coverage.depth}: ${check.coverage.reached.states.length} states, ${check.coverage.edges.length} edges; ${check.coverage.reached.status}. Frontier: ${check.coverage.frontier.length}; starts ${check.coverage.reached.unfinishedWork.starts ? 'incomplete' : 'complete'}. Limits: ${check.coverage.limits.states} states, ${check.coverage.limits.transitions} alternatives, ${check.coverage.limits.enumerationWork} enumeration work. These are the check's own limits and coverage, not the gallery search. Complete means only the declared environment; unexercised and incomplete checks are not passes.`,
                 ],
               ),
             ],
             h,
           ),
+      }),
       inspectorDetails(
         'About this search',
         isComplete ? 'complete' : 'incomplete',
@@ -737,7 +851,7 @@ const inspectorView = (
           h.p(
             [],
             [
-              `Depth ${depth}; limits ${atlas.limits.states} states and ${atlas.limits.transitions} alternatives; ${isComplete ? 'complete within declared environment' : reached.status}.`,
+              `Depth ${depth}; limits ${atlas.limits.states} states, ${atlas.limits.transitions} alternatives, and ${atlas.limits.enumerationWork} enumeration work; ${isComplete ? 'complete within declared environment' : reached.status}.`,
             ],
           ),
           h.p([], [atlas.grouping]),
@@ -766,81 +880,330 @@ export const makeLab = (
     read: (model: Model) => Option.some(model.review),
     write: (model, nextReview) =>
       modifyFields(model, { review: () => nextReview }),
-    toParentMessage: message => Message.GotReviewMessage({ message }),
+    toParentMessage: toReviewMessage,
   })
-  const atlasOf = (model: Model): Atlas =>
+  const atlasOf = (model: Pick<Model, 'program'>): Atlas =>
     Option.getOrElse(
       Array.findFirst(atlases, atlas => atlas.name === model.program),
       () => Array.headNonEmpty(atlases),
     )
 
-  const cardsOf = (model: Model, atlas: Atlas): ReadonlyArray<Card> => {
-    const place = (
-      slot: string,
-      home: string,
-      states: ReadonlyArray<string>,
-    ): Card => ({
-      slot,
-      home,
-      states,
-      state: pipe(
-        Record.get(model.positions, slot),
-        Option.flatMap(atlas.resolve),
-        Option.getOrElse(() =>
-          Option.getOrElse(Array.head(states), () => home),
-        ),
-      ),
-    })
-    return Array.filter(
-      [
-        ...Array.getSomes(
-          Array.map(model.pins, pin =>
-            Option.map(atlas.resolve(pin.address), home =>
-              place(pin.slot, home, [home]),
+  type Resource = {
+    atlas: Atlas
+    job:
+      | Iterator<
+          void,
+          Readonly<{ snapshot: GallerySnapshot; positions: Model['positions'] }>
+        >
+      | undefined
+    dispose: () => void
+  }
+  const runner = makeRunner<Resource>()
+  const Interaction = Schema.Struct({
+    slot: Schema.String,
+    address: Address,
+    message: Schema.Unknown,
+  })
+  const AnalyzeGallery = Command.define('AnalyzeGallery', {
+    args: {
+      runId: Schema.Number,
+      program: Schema.String,
+      depth: Schema.Number,
+      search: Search,
+      reset: Schema.Boolean,
+      chunks: Schema.Number,
+      positions: Model.fields.positions,
+      maybeSelected: Model.fields.maybeSelected,
+      pins: Model.fields.pins,
+      maybeInteraction: Schema.Option(Interaction),
+    },
+    messages: [Message.CompletedAnalyzeGallery],
+    execute: args =>
+      runner
+        .run(
+          { runId: args.runId, key: args.program, reset: args.reset },
+          () => {
+            const atlas = atlasOf(args).fresh()
+            const resource: Resource = {
+              atlas,
+              job: undefined,
+              dispose: () => {
+                try {
+                  resource.job?.return?.()
+                } finally {
+                  atlas.dispose()
+                }
+              },
+            }
+            return resource
+          },
+          (resource, newRun) => {
+            if (newRun) {
+              resource.job?.return?.()
+              resource.job = (function* () {
+                const atlas = resource.atlas
+                for (const address of [
+                  ...Record.values(args.positions),
+                  ...args.pins.map(pin => pin.address),
+                ]) {
+                  yield* atlas.resolveSteps(address)
+                }
+                const moved = { positions: args.positions }
+                if (Option.isSome(args.maybeInteraction)) {
+                  const interaction = args.maybeInteraction.value
+                  const source = yield* atlas.resolveSteps(interaction.address)
+                  if (Option.isSome(source)) {
+                    moved.positions = Option.match(
+                      atlas.interact(source.value, interaction.message),
+                      {
+                        onNone: () => args.positions,
+                        onSome: destination =>
+                          Record.set(
+                            args.positions,
+                            interaction.slot,
+                            atlas.address(destination),
+                          ),
+                      },
+                    )
+                  }
+                }
+                const positions = moved.positions
+                const reached = yield* atlas.explore(args.depth, args.search)
+                const maybeCheck = Array.isReadonlyArrayEmpty(
+                  atlas.propertyNames,
+                )
+                  ? Option.none()
+                  : Option.some(yield* atlas.checkSteps(args.depth))
+                const groups = yield* atlas.groupSteps(reached.states)
+                const preliminary: GallerySnapshot = {
+                  depth: args.depth,
+                  search: args.search,
+                  reached,
+                  states: yield* atlas.snapshotSteps(),
+                  groups,
+                  fixtures: atlas.fixtures(),
+                  maybeCheck: Option.none(),
+                }
+                const temporary = {
+                  ...fresh(args.program, args.search),
+                  positions,
+                  pins: args.pins,
+                  maybeSelected: args.maybeSelected,
+                  maybeSnapshot: Option.some(preliminary),
+                }
+                const cards = cardsOf(temporary)
+                const selected =
+                  cards.find(card =>
+                    Option.contains(args.maybeSelected, card.slot),
+                  ) ?? cards[0]
+                if (selected !== undefined) {
+                  yield* atlas.probe(selected.state)
+                }
+                return {
+                  snapshot: {
+                    depth: args.depth,
+                    search: args.search,
+                    reached,
+                    states: yield* atlas.snapshotSteps(),
+                    groups,
+                    fixtures: atlas.fixtures(),
+                    maybeCheck,
+                  },
+                  positions,
+                }
+              })()
+            }
+            const job = resource.job
+            if (job === undefined) {
+              throw new Error('Gallery analysis was not initialized.')
+            }
+            const cursor = { remaining: CHUNK_SIZE, step: job.next() }
+            while (!cursor.step.done && cursor.remaining > 1) {
+              cursor.remaining -= 1
+              cursor.step = job.next()
+            }
+            return {
+              done: cursor.step.done === true,
+              value: cursor.step.done
+                ? Option.some(cursor.step.value)
+                : Option.none<
+                    Readonly<{
+                      snapshot: GallerySnapshot
+                      positions: Model['positions']
+                    }>
+                  >(),
+            }
+          },
+          args.chunks,
+        )
+        .pipe(
+          Effect.map(result =>
+            immutable(
+              Message.CompletedAnalyzeGallery({
+                runId: args.runId,
+                status: result.status,
+                maybeSnapshot: Option.flatMap(result.maybeValue, value =>
+                  Option.map(value, result => result.snapshot),
+                ),
+                positions: Option.match(Option.flatten(result.maybeValue), {
+                  onNone: () => args.positions,
+                  onSome: result => result.positions,
+                }),
+              }),
+            ),
+          ),
+          Effect.catchCause(cause =>
+            Effect.exit(runner.cancel(args.runId)).pipe(
+              Effect.as(
+                Message.CompletedAnalyzeGallery({
+                  runId: args.runId,
+                  status: failureStatus(Cause.squash(cause)),
+                  maybeSnapshot: Option.none(),
+                  positions: args.positions,
+                }),
+              ),
             ),
           ),
         ),
-        ...Array.map(
-          atlas.groups(atlas.reach(model.depth, model.search).states),
-          group =>
-            place(
-              atlas.key(group.home),
-              group.home,
-              Array.filter(group.states, state =>
-                isMatching(atlas.trace(state), model.where),
-              ),
-            ),
+  })
+  const DisposeGallery = Command.define('DisposeGallery', {
+    args: { runId: Schema.Number },
+    messages: [Message.CompletedDisposeGallery],
+    execute: ({ runId }) =>
+      runner.cancel(runId).pipe(
+        Effect.as(
+          Message.CompletedDisposeGallery({
+            runId,
+            maybeFailure: Option.none(),
+          }),
         ),
-      ],
-      card => isMatching(atlas.trace(card.state), model.where),
+        Effect.catchCause(cause =>
+          Effect.succeed(
+            Message.CompletedDisposeGallery({
+              runId,
+              maybeFailure: Option.some(failureStatus(Cause.squash(cause))),
+            }),
+          ),
+        ),
+      ),
+  })
+  const continueAnalysis = (
+    model: Model,
+    reset = false,
+    maybeInteraction: Option.Option<typeof Interaction.Type> = Option.none(),
+  ): Update.Return<Model, Message> => ({
+    model,
+    commands: [
+      AnalyzeGallery({
+        runId: model.runId,
+        program: model.program,
+        depth: model.depth,
+        search: model.search,
+        reset,
+        chunks: model.analysis._tag === 'Running' ? model.analysis.chunks : 0,
+        positions: model.positions,
+        pins: model.pins,
+        maybeSelected: model.maybeSelected,
+        maybeInteraction,
+      }),
+    ],
+  })
+  const start = (
+    model: Model,
+    reset = false,
+    maybeInteraction: Option.Option<typeof Interaction.Type> = Option.none(),
+  ): Update.Return<Model, Message> =>
+    continueAnalysis(
+      modifyFields(model, {
+        runId: id => id + 1,
+        analysis: () => AnalysisStatus.Running({ chunks: 0 }),
+      }),
+      reset,
+      maybeInteraction,
     )
+  const cancel = (model: Model): Update.Return<Model, Message> => {
+    const next = modifyFields(model, {
+      runId: id => id + 1,
+      analysis: () => AnalysisStatus.Cancelled(),
+    })
+    return { model: next, commands: [DisposeGallery({ runId: next.runId })] }
+  }
+
+  const reset = (
+    model: Model,
+    program: string,
+    search: Search,
+  ): Update.Return<Model, Message> => {
+    const stopped = review.cancel(model.review)
+    const started = start(
+      modifyFields(fresh(program, search), {
+        runId: () => model.runId,
+        review: () => stopped.model,
+      }),
+      true,
+    )
+    return {
+      model: started.model,
+      commands: [
+        ...(Command.mapMessages(stopped.commands, toReviewMessage) ?? []),
+        ...(started.commands ?? []),
+      ],
+    }
   }
 
   // INIT
 
-  const init = (): Update.Return<Model, Message> => ({
-    model: fresh(Array.headNonEmpty(atlases).name),
-  })
+  const init = (): Update.Return<Model, Message> =>
+    start(fresh(Array.headNonEmpty(atlases).name))
 
   // UPDATE
 
   const moveTo = (model: Model, slot: string, state: string): Model =>
     modifyFields(model, {
       positions: positions =>
-        Record.set(positions, slot, atlasOf(model).address(state)),
+        Record.set(positions, slot, stateOf(model, state).address),
       maybeSelected: () => Option.some(slot),
     })
 
   const update = (model: Model, message: Message) =>
     Message.match<Update.Return<Model, Message>>(message, {
-      SelectedMode: ({ mode }) => ({
-        model: modifyFields(model, { mode: () => mode }),
-      }),
+      SelectedMode: ({ mode }) => {
+        if (mode === model.mode) {
+          return { model }
+        }
+        if (mode === 'Compare') {
+          const stopped = cancel(model)
+          const started = review.start(model.review)
+          return {
+            model: modifyFields(stopped.model, {
+              mode: () => mode,
+              review: () => started.model,
+            }),
+            commands: [
+              ...(stopped.commands ?? []),
+              ...(Command.mapMessages(started.commands, toReviewMessage) ?? []),
+            ],
+          }
+        }
+        const stopped = review.cancel(model.review)
+        const started = start(
+          modifyFields(model, {
+            mode: () => mode,
+            review: () => stopped.model,
+          }),
+          true,
+        )
+        return {
+          model: started.model,
+          commands: [
+            ...(Command.mapMessages(stopped.commands, toReviewMessage) ?? []),
+            ...(started.commands ?? []),
+          ],
+        }
+      },
       GotReviewMessage: ({ message: reviewMessage }) =>
         foldReview(model, reviewMessage),
-      SelectedProgram: ({ program }) => ({
-        model: fresh(program, model.search),
-      }),
+      SelectedProgram: ({ program }) => reset(model, program, model.search),
       SelectedFilter: ({ fixture, option }) => ({
         model: modifyFields(model, {
           where: where => Record.set(where, fixture, option),
@@ -852,45 +1215,78 @@ export const makeLab = (
           where: where => Record.remove(where, fixture),
         }),
       }),
-      ClickedDeeper: () => ({
-        model: modifyFields(model, { depth: depth => depth + 1 }),
-      }),
-      ClickedShallower: () => ({
-        model: modifyFields(model, { depth: depth => Math.max(0, depth - 1) }),
-      }),
-      SelectedSearch: ({ search }) => ({
-        model: modifyFields(model, { search: () => search, limit: () => PAGE }),
-      }),
+      ClickedDeeper: () =>
+        start(modifyFields(model, { depth: depth => depth + 1 })),
+      ClickedShallower: () =>
+        start(modifyFields(model, { depth: depth => Math.max(0, depth - 1) })),
+      SelectedSearch: ({ search }) =>
+        start(modifyFields(model, { search: () => search, limit: () => PAGE })),
       ClickedShowMore: () => ({
         model: modifyFields(model, { limit: limit => limit + PAGE }),
       }),
-      ClickedReset: () => ({ model: fresh(model.program) }),
-      ClickedCase: ({ slot }) => ({
-        model: modifyFields(model, { maybeSelected: () => Option.some(slot) }),
-      }),
+      ClickedReset: () => reset(model, model.program, 'breadth'),
+      ClickedCase: ({ slot }) =>
+        start(modifyFields(model, { maybeSelected: () => Option.some(slot) })),
       InteractedWithCase: ({ slot, state, message: caseMessage }) =>
-        Option.match(atlasOf(model).interact(state, caseMessage), {
-          onNone: () => ({ model }),
-          onSome: next => ({ model: moveTo(model, slot, next) }),
-        }),
-      ClickedStep: ({ slot, state }) => ({ model: moveTo(model, slot, state) }),
+        start(
+          modifyFields(model, { maybeSelected: () => Option.some(slot) }),
+          false,
+          Option.some({
+            slot,
+            address: stateOf(model, state).address,
+            message: caseMessage,
+          }),
+        ),
+      ClickedStep: ({ slot, state }) => start(moveTo(model, slot, state)),
       ClickedPin: ({ state }) => {
         const slot = `pin ${model.pins.length + 1}`
-        return {
-          model: modifyFields(model, {
+        return start(
+          modifyFields(model, {
             pins: pins =>
               Array.append(pins, {
                 slot,
-                address: atlasOf(model).address(state),
+                address: stateOf(model, state).address,
               }),
             maybeSelected: () => Option.some(slot),
           }),
-        }
+        )
       },
-      ClickedRestore: ({ slot }) => ({
-        model: modifyFields(model, {
-          positions: positions => Record.remove(positions, slot),
-        }),
+      ClickedRestore: ({ slot }) =>
+        start(
+          modifyFields(model, {
+            positions: positions => Record.remove(positions, slot),
+          }),
+        ),
+      ClickedCancel: () => cancel(model),
+      CompletedAnalyzeGallery: ({
+        runId,
+        status,
+        maybeSnapshot,
+        positions,
+      }) => {
+        if (runId !== model.runId || model.analysis._tag !== 'Running') {
+          return { model }
+        }
+        const next = modifyFields(model, {
+          analysis: () => status,
+          maybeSnapshot: previous =>
+            Option.orElse(maybeSnapshot, () => previous),
+          positions: previous =>
+            status._tag === 'Completed' ? positions : previous,
+        })
+        return status._tag === 'Running'
+          ? continueAnalysis(next)
+          : { model: next }
+      },
+      CompletedDisposeGallery: ({ runId, maybeFailure }) => ({
+        model:
+          runId !== model.runId
+            ? model
+            : Option.match(maybeFailure, {
+                onNone: () => model,
+                onSome: status =>
+                  modifyFields(model, { analysis: () => status }),
+              }),
       }),
     })
 
@@ -926,11 +1322,13 @@ export const makeLab = (
 
   const headerView = (
     model: Model,
-    atlas: Atlas,
     cards: ReadonlyArray<Card>,
     h: HtmlBuilder<Message>,
   ): Html => {
-    const reached = atlas.reach(model.depth, model.search)
+    const reached = Option.map(
+      model.maybeSnapshot,
+      snapshot => snapshot.reached,
+    )
     return h.header(
       [h.Class('lab-header')],
       [
@@ -938,8 +1336,12 @@ export const makeLab = (
         programView(model, h),
         h.div(
           [h.Class('lab-filters')],
-          Array.map(atlas.fixtures(), ({ name, options }) =>
-            filterView(model, name, options, h),
+          Array.map(
+            Option.match(model.maybeSnapshot, {
+              onNone: () => [],
+              onSome: snapshot => snapshot.fixtures,
+            }),
+            ({ name, options }) => filterView(model, name, options, h),
           ),
         ),
         h.div(
@@ -948,11 +1350,17 @@ export const makeLab = (
             h.span(
               [h.Class('lab-count')],
               [
-                `${cards.length} groups · ${reached.states.length} states · ${reached.status === 'complete' ? 'complete' : `incomplete · ${reached.status}`}`,
+                `${cards.length} groups · ${Option.match(reached, { onNone: () => 0, onSome: result => result.states.length })} states · ${model.analysis._tag === 'Completed' ? Option.match(reached, { onNone: () => 'unknown', onSome: result => (result.status === 'complete' ? 'complete' : `incomplete · ${result.status}`) }) : Review.analysisLabel(model.analysis)}`,
               ],
             ),
             searchView(model, h),
-            depthView(model, atlas, h),
+            depthView(model, h),
+            model.analysis._tag === 'Running'
+              ? h.button(
+                  [h.Class('lab-quiet'), h.OnClick(Message.ClickedCancel())],
+                  ['Cancel'],
+                )
+              : h.empty,
             h.button(
               [h.Class('lab-quiet'), h.OnClick(Message.ClickedReset())],
               ['Reset'],
@@ -972,12 +1380,12 @@ export const makeLab = (
           model: model.review,
           view: review.view,
           viewInputs: { mode: () => modeView(model, h) },
-          toParentMessage: message => Message.GotReviewMessage({ message }),
+          toParentMessage: toReviewMessage,
         }),
       }
     }
     const atlas = atlasOf(model)
-    const cards = cardsOf(model, atlas)
+    const cards = cardsOf(model)
     const maybeSelected = Option.orElse(
       Option.flatMap(model.maybeSelected, slot =>
         Array.findFirst(cards, card => card.slot === slot),
@@ -989,7 +1397,7 @@ export const makeLab = (
       body: h.div(
         [h.Class('lab')],
         [
-          headerView(model, atlas, cards, h),
+          headerView(model, cards, h),
           h.main(
             [h.Class('lab-workspace')],
             [
@@ -997,7 +1405,11 @@ export const makeLab = (
               Option.match(maybeSelected, {
                 onNone: () => h.empty,
                 onSome: card =>
-                  inspectorView(atlas, card, model.depth, model.search, h),
+                  Option.match(model.maybeSnapshot, {
+                    onNone: () => h.empty,
+                    onSome: snapshot =>
+                      inspectorView(atlas, card, model, snapshot, h),
+                  }),
               }),
             ],
           ),
@@ -1006,5 +1418,12 @@ export const makeLab = (
     }
   }
 
-  return { Model, Message, init, update, view }
+  const dispose = Effect.all([runner.shutdown, review.dispose]).pipe(
+    Effect.asVoid,
+  )
+  const resources = Layer.merge(
+    review.resources,
+    Layer.effectDiscard(Effect.addFinalizer(() => runner.shutdown)),
+  )
+  return { Model, Message, init, update, view, dispose, resources }
 }

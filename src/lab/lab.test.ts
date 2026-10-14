@@ -6,7 +6,9 @@ import { expect, test, vi } from 'vitest'
 import { signupEnvironment } from '../programs'
 import * as Signup from '../signup/main'
 import { properties } from '../signup/properties'
+import { analysisScene, dispatch, settle } from './analysis-test'
 import { answer, describe, make, pendingRequests, send } from './atlas'
+import { canonical } from './canonical'
 import { fixture } from './fixture'
 import { Message, makeLab } from './lab'
 
@@ -15,7 +17,7 @@ test.each([
   { value: undefined, expected: 'undefined' },
 ])(
   'Explore can inspect and describe a $expected Model',
-  ({ value, expected }) => {
+  async ({ value, expected }) => {
     const atlas = make(
       {
         name: 'Data Model',
@@ -28,9 +30,9 @@ test.each([
       { *starts() {} },
     )
     const lab = makeLab([atlas])
-    Scene.scene(
+    await analysisScene(
       lab,
-      Scene.given(lab.init().model),
+      await settle(lab, lab.init()),
       Scene.tap(simulation => {
         const model = Option.getOrThrow(
           Scene.find(simulation.html, '.inspector-model'),
@@ -44,7 +46,8 @@ test.each([
 
 test.each([false, true])(
   'the inspector checks only declared properties (%s)',
-  hasProperties => {
+  async hasProperties => {
+    const check = vi.fn()
     const atlas = make(
       {
         name: 'Counter',
@@ -57,15 +60,27 @@ test.each([false, true])(
       { *starts() {} },
       {
         properties: hasProperties
-          ? [{ name: 'Non-negative', state: ({ model }) => model >= 0 }]
+          ? [
+              {
+                id: 'non-negative',
+                name: 'Non-negative',
+                state: ({ model }) => {
+                  check()
+                  return model >= 0
+                },
+              },
+            ]
           : [],
       },
     )
-    const check = vi.fn(atlas.check)
-    const lab = makeLab([{ ...atlas, check }])
-    Scene.scene(lab, Scene.given(lab.init().model))
+    const lab = makeLab([atlas])
+    await analysisScene(
+      lab,
+      await settle(lab, lab.init()),
+      Scene.tap(() => {}),
+    )
     if (hasProperties) {
-      expect(check).toHaveBeenCalledWith(1)
+      expect(check).toHaveBeenCalled()
     } else {
       expect(check).not.toHaveBeenCalled()
     }
@@ -77,7 +92,7 @@ const ReadNumber = Command.define('ReadNumber', {
   execute: Effect.die('Exploration must not execute Commands'),
 })
 
-test('a fixture-free Answer is shown as a Command reply and can be selected', () => {
+test('a fixture-free Answer is shown as a Command reply and can be selected', async () => {
   const atlas = make(
     {
       name: 'Deterministic reply',
@@ -100,9 +115,9 @@ test('a fixture-free Answer is shown as a Command reply and can be selected', ()
   const root = Option.getOrThrow(Array.head(atlas.reach(0).states))
   const reply = Option.getOrThrow(Array.head(atlas.successors(root)))
   const lab = makeLab([atlas])
-  Scene.scene(
+  await analysisScene(
     lab,
-    Scene.given(lab.init().model),
+    await settle(lab, lab.init()),
     Scene.tap(simulation => {
       const inspector = Option.getOrThrow(
         Scene.find(simulation.html, 'aside.inspector'),
@@ -124,7 +139,7 @@ test('a fixture-free Answer is shown as a Command reply and can be selected', ()
   )
 })
 
-test('grouped gallery renders through Foldkit and interactions use selected execution', () => {
+test('grouped gallery renders through Foldkit and interactions use selected execution', async () => {
   const atlas = make(
     {
       name: 'Signup',
@@ -138,13 +153,14 @@ test('grouped gallery renders through Foldkit and interactions use selected exec
     { properties },
   )
   const lab = makeLab([atlas])
-  const model = lab.update(
-    lab.update(lab.init().model, Message.ClickedDeeper()).model,
-    Message.ClickedDeeper(),
-  ).model
-  Scene.scene(
+  const model = await dispatch(
     lab,
-    Scene.given(model),
+    await dispatch(lab, await settle(lab, lab.init()), Message.ClickedDeeper()),
+    Message.ClickedDeeper(),
+  )
+  await analysisScene(
+    lab,
+    model,
     Scene.tap(simulation => {
       expect(Scene.textContent(simulation.html)).toContain('groups')
       expect(Scene.textContent(simulation.html)).toContain('incomplete')
@@ -161,18 +177,20 @@ test('grouped gallery renders through Foldkit and interactions use selected exec
   )
   const selected = Option.getOrThrow(Array.last(group.states))
   const slot = atlas.key(group.home)
-  const chosen = lab.update(
+  const chosen = await dispatch(
+    lab,
     model,
     Message.ClickedStep({ slot, state: selected }),
-  ).model
-  const changed = lab.update(
+  )
+  const changed = await dispatch(
+    lab,
     chosen,
     Message.InteractedWithCase({
       slot,
       state: selected,
       message: Signup.Message.UpdatedUsername({ value: 'grace' }),
     }),
-  ).model
+  )
   const destination = Option.getOrThrow(
     atlas.resolve(changed.positions[slot] ?? []),
   )
@@ -185,7 +203,7 @@ test('grouped gallery renders through Foldkit and interactions use selected exec
   expect(destination).toBe(expected)
 })
 
-test('filters pinned cards by their displayed state', () => {
+test('filters pinned cards by their displayed state', async () => {
   const atlas = make(
     {
       name: 'Signup',
@@ -207,17 +225,19 @@ test('filters pinned cards by their displayed state', () => {
         ),
     ),
   )
-  const pinned = lab.update(
-    lab.init().model,
+  const pinned = await dispatch(
+    lab,
+    await settle(lab, lab.init()),
     Message.ClickedPin({ state: home }),
-  ).model
-  const pricingOnly = lab.update(
+  )
+  const pricingOnly = await dispatch(
+    lab,
     pinned,
     Message.SelectedFilter({ fixture: 'arrivedFrom', option: 'pricing' }),
-  ).model
-  Scene.scene(
+  )
+  await analysisScene(
     lab,
-    Scene.given(pricingOnly),
+    pricingOnly,
     Scene.tap(simulation => {
       const pin = Option.getOrThrow(Array.head(pinned.pins))
       expect(
@@ -229,7 +249,7 @@ test('filters pinned cards by their displayed state', () => {
   )
 })
 
-test('filters moved cards by their displayed response trace', () => {
+test('filters moved cards by their displayed response trace', async () => {
   const atlas = make(
     {
       name: 'Signup',
@@ -267,19 +287,25 @@ test('filters moved cards by their displayed response trace', () => {
       step => step.kind === 'Answer' && step.label.endsWith(' taken'),
     ),
   ).to
-  const deep = lab.update(lab.init().model, Message.ClickedDeeper()).model
+  const deep = await dispatch(
+    lab,
+    await settle(lab, lab.init()),
+    Message.ClickedDeeper(),
+  )
   const slot = atlas.key(free)
-  const moved = lab.update(
+  const moved = await dispatch(
+    lab,
     deep,
     Message.ClickedStep({ slot, state: taken }),
-  ).model
-  const freeOnly = lab.update(
+  )
+  const freeOnly = await dispatch(
+    lab,
     moved,
     Message.SelectedFilter({ fixture: 'name', option: 'free' }),
-  ).model
-  Scene.scene(
+  )
+  await analysisScene(
     lab,
-    Scene.given(freeOnly),
+    freeOnly,
     Scene.tap(simulation => {
       expect(
         Scene.findAll(simulation.html, 'article.case').some(
@@ -290,7 +316,7 @@ test('filters moved cards by their displayed response trace', () => {
   )
 })
 
-test('keeps a moved card and its stable slot when only its displayed response matches', () => {
+test('keeps a moved card and its stable slot when only its displayed response matches', async () => {
   const atlas = make(
     {
       name: 'Signup',
@@ -303,33 +329,49 @@ test('keeps a moved card and its stable slot when only its displayed response ma
     signupEnvironment,
   )
   const lab = makeLab([atlas])
-  const home = Option.getOrThrow(Array.head(atlas.reach(0).states))
-  const slot = atlas.key(home)
-  const checking = Option.getOrThrow(
-    atlas.interact(home, Signup.Message.UpdatedUsername({ value: 'ada' })),
+  const initial = await settle(lab, lab.init())
+  const home = Option.getOrThrow(initial.maybeSnapshot).states[0]
+  if (home === undefined) {
+    throw new Error('Missing starting state')
+  }
+  const slot = home.key
+  const checking = await dispatch(
+    lab,
+    initial,
+    Message.InteractedWithCase({
+      slot,
+      state: home.id,
+      message: Signup.Message.UpdatedUsername({ value: 'ada' }),
+    }),
   )
-  const free = Option.getOrThrow(
-    Array.findFirst(
-      atlas.successors(checking),
-      step => step.kind === 'Answer' && step.label.endsWith(' free'),
-    ),
-  ).to
-  const moved = lab.update(
-    lab.init().model,
+  const checkingState = Option.getOrThrow(checking.maybeSnapshot).states.find(
+    state => canonical(state.address) === canonical(checking.positions[slot]),
+  )
+  const free = checkingState?.next.find(
+    step => step.kind === 'Answer' && step.label.endsWith(' free'),
+  )?.to
+  if (free === undefined) {
+    throw new Error('Missing modeled free reply')
+  }
+  const moved = await dispatch(
+    lab,
+    checking,
     Message.ClickedStep({ slot, state: free }),
-  ).model
-  const filtered = lab.update(
+  )
+  const filtered = await dispatch(
+    lab,
     moved,
     Message.SelectedFilter({ fixture: 'name', option: 'free' }),
-  ).model
-  const cleared = lab.update(
+  )
+  const cleared = await dispatch(
+    lab,
     filtered,
     Message.ClearedFilter({ fixture: 'name' }),
-  ).model
-  Array.forEach([filtered, cleared], model => {
-    Scene.scene(
+  )
+  for (const model of [filtered, cleared]) {
+    await analysisScene(
       lab,
-      Scene.given(model),
+      model,
       Scene.tap(simulation => {
         const card = Scene.findAll(simulation.html, 'article.case').find(
           card => card.key === slot,
@@ -341,13 +383,14 @@ test('keeps a moved card and its stable slot when only its displayed response ma
         }
       }),
     )
-    expect(Option.getOrThrow(atlas.resolve(model.positions[slot] ?? []))).toBe(
-      free,
+    const selected = Option.getOrThrow(model.maybeSnapshot).states.find(
+      state => canonical(state.address) === canonical(model.positions[slot]),
     )
-  })
+    expect(selected?.id).toBe(free)
+  }
 })
 
-test('an unmoved group retains its slot when the filter selects a different member', () => {
+test('an unmoved group retains its slot when the filter selects a different member', async () => {
   const atlas = make(
     {
       name: 'Signup',
@@ -363,13 +406,14 @@ test('an unmoved group retains its slot when the filter selects a different memb
   const starts = atlas.reach(0).states
   const home = Option.getOrThrow(Array.head(starts))
   const pricing = Option.getOrThrow(Array.last(starts))
-  const filtered = lab.update(
-    lab.init().model,
-    Message.SelectedFilter({ fixture: 'arrivedFrom', option: 'pricing' }),
-  ).model
-  Scene.scene(
+  const filtered = await dispatch(
     lab,
-    Scene.given(filtered),
+    await settle(lab, lab.init()),
+    Message.SelectedFilter({ fixture: 'arrivedFrom', option: 'pricing' }),
+  )
+  await analysisScene(
+    lab,
+    filtered,
     Scene.tap(simulation => {
       const card = Scene.findAll(simulation.html, 'article.case').find(
         card => card.key === atlas.key(home),
@@ -387,7 +431,7 @@ test('an unmoved group retains its slot when the filter selects a different memb
   )
 })
 
-test('previews contain only the app and Inspect selects the slot for replies', () => {
+test('previews contain only the app and Inspect selects the slot for replies', async () => {
   const atlas = make(
     {
       name: 'Signup',
@@ -417,9 +461,9 @@ test('previews contain only the app and Inspect selects the slot for replies', (
       step => step.kind === 'Answer' && step.label.endsWith(' free'),
     ),
   )
-  Scene.scene(
+  await analysisScene(
     lab,
-    Scene.given(lab.init().model),
+    await settle(lab, lab.init()),
     Scene.tap(simulation => {
       Array.forEach(
         Scene.findAll(simulation.html, '.case-preview'),
@@ -472,7 +516,7 @@ test('previews contain only the app and Inspect selects the slot for replies', (
   )
 })
 
-test('the search control orders the gallery and survives a program switch', () => {
+test('the search control orders the gallery and survives a program switch', async () => {
   const atlas = make(
     {
       name: 'Signup',
@@ -485,9 +529,9 @@ test('the search control orders the gallery and survives a program switch', () =
     signupEnvironment,
   )
   const lab = makeLab([atlas])
-  Scene.scene(
+  const searched = await analysisScene(
     lab,
-    Scene.given(lab.init().model),
+    await settle(lab, lab.init()),
     Scene.click(Scene.role('button', { name: 'DFS' })),
     Scene.tap(simulation => {
       expect(
@@ -498,16 +542,18 @@ test('the search control orders the gallery and survives a program switch', () =
       ).toEqual(['DFS'])
     }),
   )
-  const model = lab.update(
-    lab.update(lab.init().model, Message.SelectedSearch({ search: 'random' }))
-      .model,
+  const model = await dispatch(
+    lab,
+    await dispatch(lab, searched, Message.SelectedSearch({ search: 'random' })),
     Message.SelectedProgram({ program: 'Signup' }),
-  ).model
+  )
   expect(model.search).toBe('random')
-  expect(lab.update(model, Message.ClickedReset()).model.search).toBe('breadth')
+  expect((await dispatch(lab, model, Message.ClickedReset())).search).toBe(
+    'breadth',
+  )
 })
 
-test('property evidence names BFS and depth even with a random gallery', () => {
+test('property evidence names BFS and depth even with a random gallery', async () => {
   const atlas = make(
     {
       name: 'Signup',
@@ -521,21 +567,71 @@ test('property evidence names BFS and depth even with a random gallery', () => {
     { properties },
   )
   const lab = makeLab([atlas])
-  Scene.scene(
+  await analysisScene(
     lab,
-    Scene.given(lab.init().model),
+    await settle(lab, lab.init()),
     Scene.click(Scene.role('button', { name: 'Random' })),
     Scene.tap(simulation => {
       const inspector = Option.getOrThrow(
         Scene.find(simulation.html, 'aside.inspector'),
       )
-      expect(Scene.textContent(inspector)).toContain('No violations found')
       expect(Scene.textContent(inspector)).toContain(
-        'Breadth-first checks through depth 1, independently of the gallery search.',
+        'no counterexample within limits',
       )
       expect(Scene.textContent(inspector)).toContain(
-        'not all possible executions',
+        'not exercised (unobserved)',
       )
+      expect(
+        Scene.findAll(simulation.html, '.inspector .is-holding'),
+      ).toHaveLength(0)
+      expect(Scene.textContent(inspector)).toContain(
+        'Breadth-first check through depth 1:',
+      )
+      expect(Scene.textContent(inspector)).toContain(
+        "These are the check's own limits and coverage, not the gallery search.",
+      )
+    }),
+  )
+})
+
+test('the inspector renders predicate errors rather than styling them as holding', async () => {
+  const atlas = make(
+    {
+      name: 'Throwing property',
+      Model: Schema.Number,
+      Message: Schema.Number,
+      start: () => ({ model: 0 }),
+      update: model => ({ model }),
+      view: (_model, h) => h.p([], ['Preview']),
+    },
+    { *starts() {} },
+    {
+      properties: [
+        {
+          id: 'throws',
+          name: 'Throws',
+          state: () => {
+            throw new Error('predicate failed to evaluate')
+          },
+        },
+      ],
+    },
+  )
+  const lab = makeLab([atlas])
+  await analysisScene(
+    lab,
+    await settle(lab, lab.init()),
+    Scene.tap(simulation => {
+      const inspector = Option.getOrThrow(
+        Scene.find(simulation.html, 'aside.inspector'),
+      )
+      expect(Scene.textContent(inspector)).toContain('Throws: error')
+      expect(Scene.textContent(inspector)).toContain(
+        'state predicate: predicate failed to evaluate',
+      )
+      expect(
+        Scene.findAll(simulation.html, '.inspector .is-holding'),
+      ).toHaveLength(0)
     }),
   )
 })

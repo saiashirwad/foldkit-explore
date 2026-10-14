@@ -1,6 +1,7 @@
 import { Array } from 'effect'
 
 import { canonical } from './canonical'
+import { dataPath, dataShape } from './execution-data'
 import type { ActionDescription, Screen } from './interactions'
 
 export type CommandDescription = Readonly<{
@@ -15,6 +16,18 @@ export type Observation = Readonly<{
 }>
 
 type DescribedCommand = Readonly<{ name: string; args?: unknown }>
+
+export const freezeCommands = (
+  pending: ReadonlyArray<DescribedCommand>,
+  path: string,
+): void => {
+  dataShape(pending, path, 'identify')
+  Array.forEach(pending, (command, index) => {
+    dataShape(command, dataPath(path, String(index)), 'identify')
+    Object.freeze(command)
+  })
+  Object.freeze(pending)
+}
 
 export const commandKey = (command: DescribedCommand): string =>
   canonical([command.name, command.args ?? {}])

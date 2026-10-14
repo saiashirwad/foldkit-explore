@@ -66,5 +66,7 @@ test('rejects unsupported values instead of erasing their meaning', () => {
 test('rejects cycles with an explicit diagnostic', () => {
   const value: Record<string, unknown> = {}
   value.self = value
-  expect(() => canonical(value)).toThrow('Cannot canonicalize a cyclic value.')
+  expect(() => canonical(value)).toThrow(
+    'Cannot canonicalize a cyclic value at $["self"]',
+  )
 })

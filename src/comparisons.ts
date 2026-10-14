@@ -1,7 +1,6 @@
 import { Array } from 'effect'
 
-import { compare } from './lab/compare'
-import type { ComparisonCase } from './lab/review'
+import { type ComparisonCase, makeComparisonCase } from './lab/review'
 import { signupEnvironment } from './programs'
 import { properties } from './signup/properties'
 import {
@@ -22,15 +21,12 @@ export const comparisons: ReadonlyArray<ComparisonCase> = Array.map(
     helperRefactor,
     original,
   ],
-  after => ({
-    name: after === original ? 'Identical versions' : after.name,
-    run: depth =>
-      compare({
-        before: original,
-        after,
-        environment: signupEnvironment,
-        properties,
-        limits: { depth, states: 5_000, transitions: 20_000 },
-      }),
-  }),
+  after =>
+    makeComparisonCase(after === original ? 'Identical versions' : after.name, {
+      before: original,
+      after,
+      environment: signupEnvironment,
+      properties,
+      limits: { depth: 8, states: 5_000, transitions: 20_000 },
+    }),
 )

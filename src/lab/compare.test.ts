@@ -75,7 +75,9 @@ test('identical versions agree, including shared observed baseline property fail
     after: program,
     environment: once,
     limits,
-    properties: [{ name: 'Positive', state: state => state.model > 0 }],
+    properties: [
+      { id: 'positive', name: 'Positive', state: state => state.model > 0 },
+    ],
   })
   expect(result.status).toBe('complete')
   expect(result.findings).toEqual([])
@@ -136,21 +138,26 @@ test('matches a Message after a copy edit and groups each repeated heading chang
   )
 })
 
-
 test('detects swapped control handlers without changing semantic event matching', () => {
   const before = numeric({
     view: (_model, h) =>
-      h.div([], [
-        h.button([h.OnClick(1)], ['Delete']),
-        h.button([h.OnClick(2)], ['Cancel']),
-      ]),
+      h.div(
+        [],
+        [
+          h.button([h.OnClick(1)], ['Delete']),
+          h.button([h.OnClick(2)], ['Cancel']),
+        ],
+      ),
   })
   const after = numeric({
     view: (_model, h) =>
-      h.div([], [
-        h.button([h.OnClick(2)], ['Delete']),
-        h.button([h.OnClick(1)], ['Cancel']),
-      ]),
+      h.div(
+        [],
+        [
+          h.button([h.OnClick(2)], ['Delete']),
+          h.button([h.OnClick(1)], ['Cancel']),
+        ],
+      ),
   })
   const shared: Environment<number, number, number> = {
     *starts() {
@@ -171,26 +178,52 @@ test('detects swapped control handlers without changing semantic event matching'
     'Action "Delete" changed Message',
     'Action "Cancel" changed Message',
   ])
-  expect(result.findings.every(finding => finding.examples.length === 3)).toBe(
-    true,
-  )
+  result.findings.forEach(finding => {
+    expect(finding.examples).toHaveLength(7)
+    expect(
+      finding.examples.map(example => [
+        example.trace.at(-2)?.before?.model ?? 'start',
+        example.before?.model,
+        example.after?.model,
+        example.trace.at(-1)?.beforeEvent?.message ?? 'start',
+        example.trace.at(-1)?.afterEvent?.message ?? 'start',
+      ]),
+    ).toEqual(
+      expect.arrayContaining([
+        ['start', 0, 0, 'start', 'start'],
+        [0, 1, 1, 1, 1],
+        [0, 2, 2, 2, 2],
+        [1, 1, 1, 1, 1],
+        [1, 2, 2, 2, 2],
+        [2, 1, 1, 1, 1],
+        [2, 2, 2, 2, 2],
+      ]),
+    )
+    expect(finding.shortest.depth).toBe(0)
+  })
   expect(result.findings[0]?.before).not.toEqual(result.findings[0]?.after)
 })
 
 test('disambiguates same-label controls by position when markup is unchanged', () => {
   const before = numeric({
     view: (_model, h) =>
-      h.div([], [
-        h.button([h.OnClick(1)], ['Choose']),
-        h.button([h.OnClick(2)], ['Choose']),
-      ]),
+      h.div(
+        [],
+        [
+          h.button([h.OnClick(1)], ['Choose']),
+          h.button([h.OnClick(2)], ['Choose']),
+        ],
+      ),
   })
   const after = numeric({
     view: (_model, h) =>
-      h.div([], [
-        h.button([h.OnClick(2)], ['Choose']),
-        h.button([h.OnClick(1)], ['Choose']),
-      ]),
+      h.div(
+        [],
+        [
+          h.button([h.OnClick(2)], ['Choose']),
+          h.button([h.OnClick(1)], ['Choose']),
+        ],
+      ),
   })
   const result = compare({
     before,
@@ -238,7 +271,6 @@ test('records an unmatched action only on the real side and replays it freshly',
   }
 })
 
-
 test('fresh replay rejects a missing event that is now available on both sides', () => {
   const before = numeric({
     view: (_model, h) => h.div([], ['Same screen']),
@@ -250,9 +282,7 @@ test('fresh replay rejects a missing event that is now available on both sides',
   const original = compare({
     before,
     after,
-    environment: environment(state =>
-      choices(state.model === 0 ? [7] : []),
-    ),
+    environment: environment(state => choices(state.model === 0 ? [7] : [])),
     limits,
   })
   const removed = original.findings.find(
@@ -286,9 +316,7 @@ test('fresh replay refuses to certify missing events from incomplete enumeration
   const original = compare({
     before,
     after,
-    environment: environment(state =>
-      choices(state.model === 0 ? [7] : []),
-    ),
+    environment: environment(state => choices(state.model === 0 ? [7] : [])),
     limits,
   })
   const trace = original.findings.find(
@@ -335,6 +363,7 @@ test('an added submission records its extra pending work and state-property fail
     limits,
     properties: [
       {
+        id: 'at-most-one-request',
         name: 'At most one request',
         state: state => state.pending.length <= 1,
       },
@@ -457,6 +486,7 @@ test('checks every transition property even when both edges return to an existin
     limits,
     properties: [
       {
+        id: 'result-is-zero',
         name: 'Result is zero',
         transition: (_before, _message, after) => after.model === 0,
       },
@@ -656,7 +686,6 @@ test('counts alternatives even when every Message returns to the same state', ()
   expect(result.status).toBe('complete')
   expect(result.counters.transitions).toBe(1_001)
 })
-
 
 test('matches a large self-loop event set incrementally and reconciles missing keys once', () => {
   const program = numeric({
@@ -918,7 +947,6 @@ const ComparisonElement = CustomElement.define({
   properties: { value: Schema.Unknown },
   events: {},
 })
-
 
 const withComparisonValue = (value: unknown) =>
   numeric({

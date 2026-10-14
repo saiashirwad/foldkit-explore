@@ -1,7 +1,7 @@
 import { Array } from 'effect'
 import { expect, test } from 'vitest'
 
-import { type Choices, fixture, outcomes } from './fixture'
+import { type Choices, enumerate, fixture, outcomes } from './fixture'
 
 const values = <Output>(choices: () => Choices<Output>) =>
   Array.map(Array.fromIterable(outcomes(choices)), ({ value }) => value)
@@ -106,4 +106,78 @@ test('outcomes evaluates only demanded alternatives and resumes in order', () =>
     value: 2,
   })
   expect(completed).toEqual([1, 2])
+})
+
+const pruned = (depth: number): Choices<number> =>
+  (function* () {
+    for (const axis of Array.range(1, depth)) {
+      yield* fixture(`axis${axis}`, { a: 0, b: 1 })
+    }
+    return yield* fixture('pruned', {})
+  })()
+
+test('a fully pruned tree yields checkpoints and cancellation releases its active generator', () => {
+  const calls = { starts: 0, closed: 0 }
+  function* choices(): Choices<number> {
+    calls.starts += 1
+    try {
+      return yield* pruned(16)
+    } finally {
+      calls.closed += 1
+    }
+  }
+  const cursor = enumerate(choices)
+  const steps = Array.makeBy(64, () => cursor.next())
+  expect(steps.every(step => !step.done && step.value.kind === 'work')).toBe(
+    true,
+  )
+  expect(calls.starts).toBeLessThanOrEqual(64)
+  expect(calls.closed).toBe(calls.starts - 1)
+  cursor.return()
+  expect(calls.closed).toBe(calls.starts)
+  expect(cursor.next().done).toBe(true)
+})
+
+test('checkpointed nested and empty branches resume without dropping outcomes', () => {
+  function* choices(): Choices<number> {
+    const first = yield* fixture('first', { one: 1, two: 2, three: 3 })
+    return yield* fixture('second', first === 2 ? {} : { a: first, b: -first })
+  }
+  const cursor = enumerate(choices)
+  const prefix = Array.makeBy(5, () => cursor.next())
+  expect(prefix.every(step => !step.done && step.value.kind === 'work')).toBe(
+    true,
+  )
+  const rest = Array.fromIterable(cursor)
+  expect(
+    Array.flatMap(rest, step =>
+      step.kind === 'outcome' ? [step.outcome] : [],
+    ),
+  ).toEqual(Array.fromIterable(outcomes(choices)))
+})
+
+test('operation-count benchmark: wide siblings need constant work before the first outcome', () => {
+  const offered = Object.fromEntries(
+    Array.makeBy(50_000, index => [String(index), index]),
+  )
+  const completed: Array<number> = []
+  function* choices(): Choices<number> {
+    const value = yield* fixture('wide', offered)
+    completed.push(value)
+    return value
+  }
+  const cursor = enumerate(choices)
+  const first = Array.makeBy(4, () => cursor.next())
+  expect(first.map(step => step.value?.kind)).toEqual([
+    'work',
+    'work',
+    'work',
+    'outcome',
+  ])
+  expect(first.at(-1)?.value).toEqual({
+    kind: 'outcome',
+    outcome: { decisions: [{ fixture: 'wide', option: '0' }], value: 0 },
+  })
+  expect(completed).toEqual([0])
+  cursor.return()
 })
