@@ -650,7 +650,7 @@ const inspectorView = (
   const depth = snapshot.depth
   const search = snapshot.search
   const current = stateOf(model, card.state)
-  const failures = snapshot.failures
+  const maybeCheck = snapshot.maybeCheck
   const reached = snapshot.reached
   const isComplete =
     model.analysis._tag === 'Completed' && reached.status === 'complete'
@@ -763,33 +763,49 @@ const inspectorView = (
           )
         : h.empty,
       inspectorDetails('Model', '', [modelView(current.encodedModel, h)], h),
-      Array.isReadonlyArrayEmpty(atlas.propertyNames)
-        ? h.empty
-        : inspectorDetails(
+      Option.match(maybeCheck, {
+        onNone: () => h.empty,
+        onSome: check =>
+          inspectorDetails(
             'Properties',
-            failures.length === 0
-              ? 'No violations found'
-              : `${failures.length} failing`,
+            `${check.violations.length} counterexamples · ${check.coverage.reached.status}`,
             [
+              ...Array.map(check.errors, error =>
+                h.p([], [`Modeling error: ${error.reason}`]),
+              ),
               h.ul(
                 [],
-                Array.map(atlas.propertyNames, name =>
+                Array.map(check.properties, property =>
                   h.li(
                     [
                       h.Class(
-                        Array.some(
-                          failures,
-                          failure => failure.property === name,
-                        )
+                        property.verdict === 'counterexample' ||
+                          property.verdict === 'error'
                           ? 'is-failing'
-                          : 'is-holding',
+                          : property.verdict === 'complete'
+                            ? 'is-holding'
+                            : '',
                       ),
                     ],
-                    [name],
+                    [
+                      `${property.name}: ${property.verdict === 'complete' ? 'holds in the declared environment' : property.verdict === 'inconclusive' ? 'no counterexample within limits' : property.verdict === 'not-exercised' ? `not exercised (${property.applicability})` : property.verdict}`,
+                      h.p(
+                        [],
+                        [
+                          `${property.counts.state.evaluated} state checks · ${property.counts.transition.evaluated} transition checks`,
+                        ],
+                      ),
+                      ...Array.map(property.errors, error =>
+                        h.p(
+                          [],
+                          [`${error.kind} ${error.stage}: ${error.reason}`],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              ...Array.map(failures, failure =>
+              ...Array.map(check.violations, failure =>
                 h.section(
                   [],
                   [
@@ -803,12 +819,13 @@ const inspectorView = (
               h.p(
                 [],
                 [
-                  `Breadth-first checks through depth ${depth}, independently of the gallery search. Checked only reached states and transitions, not all possible executions.`,
+                  `Breadth-first check through depth ${check.coverage.depth}: ${check.coverage.reached.states.length} states, ${check.coverage.edges.length} edges; ${check.coverage.reached.status}. Frontier: ${check.coverage.frontier.length}; starts ${check.coverage.reached.unfinishedWork.starts ? 'incomplete' : 'complete'}. Limits: ${check.coverage.limits.states} states, ${check.coverage.limits.transitions} alternatives, ${check.coverage.limits.enumerationWork} enumeration work. These are the check's own limits and coverage, not the gallery search. Complete means only the declared environment; unexercised and incomplete checks are not passes.`,
                 ],
               ),
             ],
             h,
           ),
+      }),
       inspectorDetails(
         'About this search',
         isComplete ? 'complete' : 'incomplete',
@@ -952,15 +969,11 @@ export const makeLab = (
                 }
                 const positions = moved.positions
                 const reached = yield* atlas.explore(args.depth, args.search)
-                if (
-                  Array.isReadonlyArrayNonEmpty(atlas.propertyNames) &&
-                  args.search !== 'breadth'
-                ) {
-                  yield* atlas.explore(args.depth, 'breadth')
-                }
-                const failures = Array.isReadonlyArrayEmpty(atlas.propertyNames)
-                  ? []
-                  : yield* atlas.checkSteps(args.depth)
+                const maybeCheck = Array.isReadonlyArrayEmpty(
+                  atlas.propertyNames,
+                )
+                  ? Option.none()
+                  : Option.some(yield* atlas.checkSteps(args.depth))
                 const groups = yield* atlas.groupSteps(reached.states)
                 const preliminary: GallerySnapshot = {
                   depth: args.depth,
@@ -969,7 +982,7 @@ export const makeLab = (
                   states: yield* atlas.snapshotSteps(),
                   groups,
                   fixtures: atlas.fixtures(),
-                  failures: [],
+                  maybeCheck: Option.none(),
                 }
                 const temporary = {
                   ...fresh(args.program, args.search),
@@ -994,7 +1007,7 @@ export const makeLab = (
                     states: yield* atlas.snapshotSteps(),
                     groups,
                     fixtures: atlas.fixtures(),
-                    failures,
+                    maybeCheck,
                   },
                   positions,
                 }

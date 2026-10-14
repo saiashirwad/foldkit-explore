@@ -64,7 +64,9 @@ test('Comparison and fresh replay support non-enumerable input context', () => {
     before: hiddenProgram,
     after: hiddenProgram,
     environment: hiddenEnvironment,
-    properties: [{ name: 'Replay context', state: () => false }],
+    properties: [
+      { id: 'replay-context', name: 'Replay context', state: () => false },
+    ],
     limits,
   })
   expect(comparison.findings).toEqual([])
@@ -250,7 +252,11 @@ test.each(['start', 'update'])(
       after: checked,
       environment: structuredEnvironment,
       properties: [
-        { name: 'At zero', state: state => state.model.value === 0 },
+        {
+          id: 'at-zero',
+          name: 'At zero',
+          state: state => state.model.value === 0,
+        },
       ],
       limits,
     })
@@ -275,7 +281,13 @@ test('replay evidence and previews reject structured Model accessors before sche
     before: checked,
     after: checked,
     environment: structuredEnvironment,
-    properties: [{ name: 'At zero', state: state => state.model.value === 0 }],
+    properties: [
+      {
+        id: 'at-zero',
+        name: 'At zero',
+        state: state => state.model.value === 0,
+      },
+    ],
     limits,
   })
   const example = Option.getOrThrow(

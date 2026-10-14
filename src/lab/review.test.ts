@@ -63,7 +63,11 @@ const lab = () =>
         after: before,
         environment,
         properties: [
-          { name: 'Stay at start', state: state => state.model === 0 },
+          {
+            id: 'stay-at-start',
+            name: 'Stay at start',
+            state: state => state.model === 0,
+          },
         ],
         limits: { depth: 8, states: 50, transitions: 100 },
       }),

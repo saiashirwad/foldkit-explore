@@ -86,7 +86,7 @@ test('screens group different pending queues without merging execution states', 
 
 test('signup properties hold within depth 8 without claiming complete exploration', () => {
   const atlas = signup()
-  expect(atlas.check(8)).toEqual([])
+  expect(atlas.check(8).violations).toEqual([])
   expect(atlas.reach(8).status).not.toBe('complete')
   expect(atlas.groups(atlas.reach(8).states).length).toBeLessThan(
     atlas.reach(8).states.length,
@@ -124,8 +124,12 @@ const counter = () =>
     },
     {
       properties: [
-        { name: 'state', state: ({ model }) => model !== 4 },
-        { name: 'transition', transition: (_before, message) => message !== 4 },
+        { id: 'state', name: 'state', state: ({ model }) => model !== 4 },
+        {
+          id: 'transition',
+          name: 'transition',
+          transition: (_before, message) => message !== 4,
+        },
       ],
     },
   )
@@ -137,11 +141,11 @@ test('counterexamples use shortest explored paths, not earlier live-event discov
   const two = Option.getOrThrow(atlas.interact(one, 2))
   const three = Option.getOrThrow(atlas.interact(two, 4))
   expect(atlas.trace(three)).toHaveLength(4)
-  expect(atlas.check(0)).toEqual([])
+  expect(atlas.check(0).violations).toEqual([])
   expect(
     atlas
       .check(3)
-      .map(failure => [
+      .violations.map(failure => [
         failure.property,
         failure.trace.map(step => step.label),
       ]),
@@ -529,6 +533,7 @@ test('transition properties check valid undefined Messages', () => {
     {
       properties: [
         {
+          id: 'the-transition-is-rejected',
           name: 'The transition is rejected',
           transition: (_before, message) => {
             checked.push(message)
@@ -538,7 +543,7 @@ test('transition properties check valid undefined Messages', () => {
       ],
     },
   )
-  const failures = atlas.check(1)
+  const failures = atlas.check(1).violations
   expect(checked).toEqual([undefined])
   expect(failures).toHaveLength(1)
   expect(failures[0]?.property).toBe('The transition is rejected')

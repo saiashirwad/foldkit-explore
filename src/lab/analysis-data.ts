@@ -1,7 +1,8 @@
 import { Schema } from 'effect'
 import { defineTaggedUnion } from 'foldkit/schema'
 
-import { StateSnapshot, StepSnapshot } from './atlas'
+import { CheckReport, ReachSnapshot, StateSnapshot } from './atlas'
+export { ReachSnapshot } from './atlas'
 import { Decision } from './fixture'
 import type { Screen } from './interactions'
 
@@ -15,27 +16,6 @@ export const AnalysisStatus = defineTaggedUnion({
 })
 export type AnalysisStatus = typeof AnalysisStatus.Type
 
-export const ReachSnapshot = Schema.Struct({
-  states: Schema.Array(Schema.String),
-  status: Schema.Literals([
-    'complete',
-    'depth-limit',
-    'state-limit',
-    'transition-limit',
-    'enumeration-limit',
-  ]),
-  counters: Schema.Struct({
-    states: Schema.Number,
-    transitions: Schema.Number,
-    starts: Schema.Number,
-    enumerationWork: Schema.Number,
-  }),
-  unfinishedWork: Schema.Struct({
-    starts: Schema.Boolean,
-    states: Schema.Number,
-    transitions: Schema.Number,
-  }),
-})
 export const GallerySnapshot = Schema.Struct({
   depth: Schema.Number,
   search: Schema.Literals(['breadth', 'depth', 'random']),
@@ -50,13 +30,7 @@ export const GallerySnapshot = Schema.Struct({
       options: Schema.Array(Schema.String),
     }),
   ),
-  failures: Schema.Array(
-    Schema.Struct({
-      property: Schema.String,
-      trace: Schema.Array(StepSnapshot),
-      state: Schema.String,
-    }),
-  ),
+  maybeCheck: Schema.Option(CheckReport),
 })
 export type GallerySnapshot = typeof GallerySnapshot.Type
 
@@ -131,6 +105,7 @@ export const ComparisonSnapshot = Schema.Struct({
     'state-limit',
     'transition-limit',
     'enumeration-limit',
+    'model-error',
     'pair-limit',
     'running',
   ]),
@@ -175,6 +150,7 @@ export const ComparisonSnapshot = Schema.Struct({
   ),
   propertyFailures: Schema.Array(
     Schema.Struct({
+      propertyId: Schema.String,
       property: Schema.String,
       side: Schema.Literals(['before', 'after']),
       kind: Schema.Literals(['state', 'transition']),

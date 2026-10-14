@@ -11,7 +11,9 @@ import {
   type SuccessorStatus,
   type Transition,
   limit,
+  registerProperties,
   remaining,
+  transitionEvidence,
 } from './atlas'
 import { canonical, ownDataEntries } from './canonical'
 import { formatValue } from './display'
@@ -128,6 +130,7 @@ export type ComparisonFinding = Readonly<{
 }>
 
 export type PropertyFailure = Readonly<{
+  propertyId: string
   property: string
   side: ComparisonSide
   kind: 'state' | 'transition'
@@ -187,6 +190,7 @@ type Event<Message> = Readonly<{
 type Prepared<Model, Message, Input> = Readonly<{
   node: Node<Model, Message, Input>
   issued: ReadonlyArray<CommandDescription>
+  issuedCommands: Update.Commands<Message>
 }>
 
 type Enumeration<Message> = {
@@ -396,7 +400,7 @@ export const createComparison = <
   options: ComparisonOptions<BeforeModel, AfterModel, Message, Input>,
 ): Comparison => {
   const { environment } = options
-  const properties = options.properties ?? []
+  const properties = registerProperties(options.properties ?? [])
   const identity = makeIdentity()
   type InspectionCache = Map<
     unknown,
@@ -460,13 +464,18 @@ export const createComparison = <
         )
       }
       freezeCommands(pending, `${program.name}.pending`)
+      freezeCommands(issued, `${program.name}.issued`)
       const pendingDescription = describeCommands(pending)
       identity.of(input, `${program.name}.input`)
       identity.of(pendingDescription, `${program.name}.pending`)
       const key = identity.of([context, input, model, pendingDescription])
       const known = nodes.get(key)
       if (known !== undefined) {
-        return { node: known, issued: describeCommands(issued) }
+        return {
+          node: known,
+          issued: describeCommands(issued),
+          issuedCommands: issued,
+        }
       }
       const inspection = inspectModel(model)
       const id = `${prefix}${nodes.size + 1}`
@@ -492,7 +501,7 @@ export const createComparison = <
           observation: observationOf(inspection, pendingDescription),
         },
       }
-      return { node, issued: describeCommands(issued) }
+      return { node, issued: describeCommands(issued), issuedCommands: issued }
     }
     const start = (input: Input, context: ReadonlyArray<Decision>) => {
       identity.of(input, `${program.name}.input`)
@@ -843,6 +852,8 @@ export const createComparison = <
     previous?: Pair<BeforeModel, AfterModel, Message, Input>,
     beforeEvent?: Event<Message>,
     afterEvent?: Event<Message>,
+    beforeIssued: Update.Commands<Message> = [],
+    afterIssued: Update.Commands<Message> = [],
   ) => {
     const check = (
       property: Property<BeforeModel | AfterModel, Message>,
@@ -852,6 +863,7 @@ export const createComparison = <
     ) => {
       if (beforePassed === false) {
         failures.push({
+          propertyId: property.id,
           property: property.name,
           side: 'before',
           kind,
@@ -860,6 +872,7 @@ export const createComparison = <
       }
       if (afterPassed === false) {
         failures.push({
+          propertyId: property.id,
           property: property.name,
           side: 'after',
           kind,
@@ -872,7 +885,7 @@ export const createComparison = <
       ) {
         const side = afterPassed === false ? 'after' : 'before'
         record(
-          [property.name, kind, beforePassed, afterPassed],
+          [property.id, kind, beforePassed, afterPassed],
           'property',
           `Property failed ${side}: ${property.name}`,
           'Property results describe these executions; they do not establish a global pass for either version.',
@@ -887,28 +900,44 @@ export const createComparison = <
         check(
           property,
           'state',
-          before === undefined ? undefined : property.state(before),
-          after === undefined ? undefined : property.state(after),
+          before === undefined || property.stateApplies?.(before) === false
+            ? undefined
+            : property.state(before),
+          after === undefined || property.stateApplies?.(after) === false
+            ? undefined
+            : property.state(after),
         )
       }
-      if (property.transition !== undefined && previous !== undefined) {
+      const predicate = property.transition
+      if (predicate !== undefined && previous !== undefined) {
+        const evaluate = (
+          source: Node<BeforeModel | AfterModel, Message, Input>,
+          target: Node<BeforeModel | AfterModel, Message, Input> | undefined,
+          event: Event<Message> | undefined,
+          issued: Update.Commands<Message>,
+        ) => {
+          if (target === undefined || event === undefined) {
+            return undefined
+          }
+          const step = transitionEvidence(
+            source.pending,
+            event.transition,
+            issued,
+          )
+          return property.transitionApplies?.(
+            source,
+            event.transition.message,
+            target,
+            step,
+          ) === false
+            ? undefined
+            : predicate(source, event.transition.message, target, step)
+        }
         check(
           property,
           'transition',
-          before === undefined || beforeEvent === undefined
-            ? undefined
-            : property.transition(
-                previous.before,
-                beforeEvent.transition.message,
-                before,
-              ),
-          after === undefined || afterEvent === undefined
-            ? undefined
-            : property.transition(
-                previous.after,
-                afterEvent.transition.message,
-                after,
-              ),
+          evaluate(previous.before, before, beforeEvent, beforeIssued),
+          evaluate(previous.after, after, afterEvent, afterIssued),
         )
       }
     })
@@ -1110,6 +1139,8 @@ export const createComparison = <
       pair,
       buffered.beforeEvent,
       buffered.afterEvent,
+      buffered.before?.issuedCommands,
+      buffered.after?.issuedCommands,
     )
     if (
       buffered.beforeEvent === undefined &&

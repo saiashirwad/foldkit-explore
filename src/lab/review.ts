@@ -191,7 +191,7 @@ const propertyGroups = (
     }
   >()
   Array.forEach(comparison.propertyFailures, failure => {
-    const id = canonical([failure.property, failure.kind])
+    const id = canonical([failure.propertyId, failure.kind])
     const group = groups.get(id) ?? {
       id,
       property: failure.property,

@@ -18,6 +18,7 @@ import { makeIdentity } from './identity'
 import { type InputDomain, inspect } from './interactions'
 import {
   type Observation,
+  commandKey,
   describeCommands,
   freezeCommands,
   observationOf,
@@ -105,15 +106,85 @@ export const pendingRequests = <C extends RequestCommand>(
   )
 }
 
+export type TransitionEvidence<Message> = Readonly<{
+  kind: 'Move' | 'Answer' | 'Event'
+  maybeRequest: Option.Option<Request & Readonly<{ occurrence: number }>>
+  issued: Update.Commands<Message>
+}>
+
 export type Property<Model, Message> = Readonly<{
+  id: string
   name: string
   state?: (state: State<Model, Message>) => boolean
+  stateApplies?: (state: State<Model, Message>) => boolean
   transition?: (
     before: State<Model, Message>,
     message: Message,
     after: State<Model, Message>,
+    evidence: TransitionEvidence<Message>,
+  ) => boolean
+  transitionApplies?: (
+    before: State<Model, Message>,
+    message: Message,
+    after: State<Model, Message>,
+    evidence: TransitionEvidence<Message>,
   ) => boolean
 }>
+
+export const registerProperties = <Model, Message>(
+  properties: ReadonlyArray<Property<Model, Message>>,
+): ReadonlyArray<Property<Model, Message>> => {
+  const ids = new Set<string>()
+  return Object.freeze(
+    Array.map(properties, property => {
+      if (property.id.trim() === '') {
+        throw new Error('Property identifiers must not be empty.')
+      }
+      if (ids.has(property.id)) {
+        throw new Error(`Duplicate property identifier: ${property.id}.`)
+      }
+      if (
+        typeof property.state !== 'function' &&
+        typeof property.transition !== 'function'
+      ) {
+        throw new Error(
+          `Property ${property.id} must declare at least one predicate.`,
+        )
+      }
+      if (
+        (property.stateApplies !== undefined && property.state === undefined) ||
+        (property.transitionApplies !== undefined &&
+          property.transition === undefined)
+      ) {
+        throw new Error(
+          `Property ${property.id}: applicability requires its corresponding predicate.`,
+        )
+      }
+      ids.add(property.id)
+      return Object.freeze({ ...property })
+    }),
+  )
+}
+
+export const transitionEvidence = <Message>(
+  pending: Update.Commands<Message>,
+  transition: Transition<Message>,
+  issued: Update.Commands<Message>,
+): TransitionEvidence<Message> => ({
+  kind: transition.kind,
+  issued,
+  maybeRequest:
+    transition.kind === 'Move'
+      ? Option.none()
+      : Option.some({
+          ...transition.request,
+          occurrence: Array.filter(
+            pending.slice(0, transition.request.index),
+            command =>
+              commandKey(command) === commandKey(transition.request.command),
+          ).length,
+        }),
+})
 
 export const Search = Schema.Literals(['breadth', 'depth', 'random'])
 export type Search = typeof Search.Type
@@ -196,6 +267,7 @@ export type ReachStatus =
   | 'state-limit'
   | 'transition-limit'
   | 'enumeration-limit'
+  | 'model-error'
 export type SuccessorStatus = 'unseen' | 'partial' | 'complete'
 
 export type Reach = Readonly<{
@@ -219,22 +291,133 @@ export type FixtureOptions = Readonly<{
   name: string
   options: ReadonlyArray<string>
 }>
-export type Violation = Readonly<{
-  property: string
-  trace: ReadonlyArray<Step>
-  state: string
-}>
+export const ReachSnapshot = Schema.Struct({
+  states: Schema.Array(Schema.String),
+  status: Schema.Literals([
+    'complete',
+    'depth-limit',
+    'state-limit',
+    'transition-limit',
+    'enumeration-limit',
+    'model-error',
+  ]),
+  counters: Schema.Struct({
+    states: Schema.Number,
+    transitions: Schema.Number,
+    starts: Schema.Number,
+    enumerationWork: Schema.Number,
+  }),
+  unfinishedWork: Schema.Struct({
+    starts: Schema.Boolean,
+    states: Schema.Number,
+    transitions: Schema.Number,
+  }),
+})
+export const Violation = Schema.Struct({
+  propertyId: Schema.String,
+  property: Schema.String,
+  kind: Schema.Literals(['state', 'transition']),
+  trace: Schema.Array(StepSnapshot),
+  state: Schema.String,
+})
+export type Violation = typeof Violation.Type
+const EvaluationCounts = Schema.Struct({
+  considered: Schema.Number,
+  applicable: Schema.Number,
+  evaluated: Schema.Number,
+})
+const PropertyError = Schema.Struct({
+  kind: Schema.Literals(['state', 'transition']),
+  stage: Schema.Literals(['applicability', 'predicate']),
+  reason: Schema.String,
+  state: Schema.String,
+  trace: Schema.Array(StepSnapshot),
+})
+const CommandEvidence = Schema.Struct({
+  name: Schema.String,
+  args: Schema.Unknown,
+})
+const StepEvidenceSnapshot = Schema.Struct({
+  kind: Schema.Literals(['Move', 'Answer', 'Event']),
+  maybeRequest: Schema.Option(
+    Schema.Struct({
+      index: Schema.Number,
+      occurrence: Schema.Number,
+      command: CommandEvidence,
+    }),
+  ),
+  issued: Schema.Array(CommandEvidence),
+})
+const CheckError = Schema.Struct({
+  reason: Schema.String,
+  maybeState: Schema.Option(Schema.String),
+})
+export const CheckReport = Schema.Struct({
+  version: Schema.Literal(1),
+  coverage: Schema.Struct({
+    depth: Schema.Number,
+    search: Schema.Literal('breadth'),
+    limits: Schema.Struct({
+      states: Schema.Number,
+      transitions: Schema.Number,
+      enumerationWork: Schema.Number,
+    }),
+    reached: ReachSnapshot,
+    starts: Schema.Array(StepSnapshot),
+    edges: Schema.Array(
+      Schema.Struct({
+        from: Schema.String,
+        step: StepSnapshot,
+        evidence: StepEvidenceSnapshot,
+      }),
+    ),
+    frontier: Schema.Array(Schema.String),
+    enumeration: Schema.Array(
+      Schema.Struct({
+        state: Schema.String,
+        status: Schema.Literals(['unseen', 'partial', 'complete']),
+      }),
+    ),
+    assumptions: Schema.Array(Schema.String),
+  }),
+  errors: Schema.Array(CheckError),
+  violations: Schema.Array(Violation),
+  properties: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      name: Schema.String,
+      verdict: Schema.Literals([
+        'counterexample',
+        'inconclusive',
+        'complete',
+        'not-exercised',
+        'error',
+      ]),
+      applicability: Schema.Literals(['observed', 'unobserved', 'unreachable']),
+      counts: Schema.Struct({
+        state: EvaluationCounts,
+        transition: EvaluationCounts,
+      }),
+      maybeWitness: Schema.Option(
+        Schema.Struct({
+          state: Schema.String,
+          trace: Schema.Array(StepSnapshot),
+        }),
+      ),
+      maybeViolation: Schema.Option(Violation),
+      errors: Schema.Array(PropertyError),
+    }),
+  ),
+})
+export type CheckReport = typeof CheckReport.Type
 export type Group = Readonly<{ home: string; states: ReadonlyArray<string> }>
 
 export type Atlas = Readonly<{
   name: string
   limits: ExplorationLimits
   propertyNames: ReadonlyArray<string>
-  check: (depth: number, limits?: Limits) => ReadonlyArray<Violation>
-  checkSteps: (
-    depth: number,
-    limits?: Limits,
-  ) => Generator<void, ReadonlyArray<Violation>>
+  check: (depth: number, limits?: Limits) => CheckReport
+  checkSteps: (depth: number, limits?: Limits) => Generator<void, CheckReport>
   groups: (states: ReadonlyArray<string>) => ReadonlyArray<Group>
   groupSteps: (
     states: ReadonlyArray<string>,
@@ -297,6 +480,7 @@ type Arrival<Model, Message, Input> = Hop &
     maybeFrom: Option.Option<Node<Model, Message, Input>>
     input: Input
     maybeMessageValue: Option.Option<Message>
+    evidence?: TransitionEvidence<Message>
   }>
 
 type PreparedArrival<Model, Message, Input> = {
@@ -311,6 +495,7 @@ type Source<Value> = {
   valueWork: Array<number>
   values: Array<Outcome<Value>>
   done: boolean
+  maybeFailure: Option.Option<Readonly<{ cause: unknown; work: number }>>
 }
 
 type Read<Value> =
@@ -320,6 +505,10 @@ type Read<Value> =
 
 type SearchResult = Readonly<{
   reach: Reach
+  errors: ReadonlyArray<typeof CheckError.Type>
+  starts: ReadonlyArray<Step>
+  frontier: ReadonlyArray<string>
+  enumeration: CheckReport['coverage']['enumeration']
   paths: ReadonlyMap<string, ReadonlyArray<Step>>
   edges: ReadonlyMap<string, ReadonlyArray<Step>>
 }>
@@ -330,6 +519,7 @@ const source = <Value>(choices: () => Choices<Value>): Source<Value> => ({
   valueWork: [],
   values: [],
   done: false,
+  maybeFailure: Option.none(),
 })
 
 const labelOf = (decisions: ReadonlyArray<Decision>) =>
@@ -388,6 +578,7 @@ export const make = <Model, Message, Input = void>(
     transitions: 50_000,
     enumerationWork: 1_000_000,
   })
+  const properties = registerProperties(options.properties ?? [])
   const identity = makeIdentity()
   const screens = makeIdentity()
   const nodes = new Map<string, Node<Model, Message, Input>>()
@@ -396,7 +587,10 @@ export const make = <Model, Message, Input = void>(
     object,
     PreparedArrival<Model, Message, Input>
   >()
-  const messages = new WeakMap<Step, Readonly<{ message: Message }>>()
+  const messages = new WeakMap<
+    Step,
+    Readonly<{ message: Message; evidence: TransitionEvidence<Message> }>
+  >()
   const sources = new Map<string, Source<Transition<Message>>>()
   const inspections = new Map<
     unknown,
@@ -507,7 +701,11 @@ export const make = <Model, Message, Input = void>(
     prepared.maybeStep = Option.some(step)
     Option.match(arrival.maybeMessageValue, {
       onNone: () => undefined,
-      onSome: message => messages.set(step, { message }),
+      onSome: message => {
+        if (arrival.evidence !== undefined) {
+          messages.set(step, { message, evidence: arrival.evidence })
+        }
+      },
     })
     learn(arrival.decisions)
     return step
@@ -539,6 +737,14 @@ export const make = <Model, Message, Input = void>(
     return prepared
   }
 
+  const freezeIssued = (
+    issued: Update.Commands<Message>,
+  ): Update.Commands<Message> => {
+    freezeCommands(issued, `${program.name}.issued`)
+    identity.of(describeCommands(issued), `${program.name}.issued`)
+    return issued
+  }
+
   const after = (
     node: Node<Model, Message, Input>,
     transition: Transition<Message>,
@@ -553,6 +759,11 @@ export const make = <Model, Message, Input = void>(
         updated.commands ?? [],
       ),
       maybeMessageValue: Option.some(transition.message),
+      evidence: transitionEvidence(
+        node.pending,
+        transition,
+        freezeIssued(updated.commands ?? []),
+      ),
     }
   }
 
@@ -619,6 +830,7 @@ export const make = <Model, Message, Input = void>(
             valueWork: [],
             values: [],
             done: true,
+            maybeFailure: Option.none(),
           }
         : source(() =>
             next({
@@ -650,6 +862,12 @@ export const make = <Model, Message, Input = void>(
           ? { kind: 'value', outcome: known }
           : { kind: 'limit' }
       }
+      if (Option.isSome(current.maybeFailure)) {
+        if (!charge(current.maybeFailure.value.work)) {
+          return { kind: 'limit' }
+        }
+        throw current.maybeFailure.value.cause
+      }
       if (current.done) {
         return charge(current.work) ? { kind: 'done' } : { kind: 'limit' }
       }
@@ -657,7 +875,20 @@ export const make = <Model, Message, Input = void>(
         return { kind: 'limit' }
       }
       yield
-      const item = current.iterator.next()
+      const advance = () => {
+        try {
+          return current.iterator.next()
+        } catch (error) {
+          current.work += 1
+          revision.value += 1
+          current.maybeFailure = Option.some({
+            cause: error,
+            work: current.work,
+          })
+          throw error
+        }
+      }
+      const item = advance()
       current.work += 1
       revision.value += 1
       if (item.done) {
@@ -736,13 +967,14 @@ export const make = <Model, Message, Input = void>(
     requestedDepth: number,
     search: Search = 'breadth',
     override: Limits = {},
+    captureErrors = false,
   ): Generator<void, SearchResult> {
     if (lifecycle.disposed) {
       throw new Error('Atlas session is disposed.')
     }
     const depth = limit(requestedDepth, 'Depth')
     const bound = limitsOf(override, limits)
-    const cacheKey = `${search} ${depth} ${bound.states} ${bound.transitions} ${bound.enumerationWork}`
+    const cacheKey = `${search} ${depth} ${bound.states} ${bound.transitions} ${bound.enumerationWork} ${captureErrors}`
     const known = results.get(cacheKey)
     if (known?.revision === revision.value) {
       return known.result
@@ -767,6 +999,7 @@ export const make = <Model, Message, Input = void>(
         | 'state-limit'
         | 'transition-limit'
         | 'enumeration-limit'
+        | 'model-error'
         | undefined
       startsDone: boolean
       startIndex: number
@@ -776,10 +1009,30 @@ export const make = <Model, Message, Input = void>(
       startIndex: 0,
     }
 
+    const errors: Array<typeof CheckError.Type> = []
+    const attempt = (
+      prepare: () => PreparedArrival<Model, Message, Input>,
+      maybeState: Option.Option<string> = Option.none(),
+    ): PreparedArrival<Model, Message, Input> | undefined => {
+      try {
+        return prepare()
+      } catch (error) {
+        if (!captureErrors) {
+          throw error
+        }
+        errors.push({
+          reason: error instanceof Error ? error.message : String(error),
+          maybeState,
+        })
+        progress.stopped = 'model-error'
+        return undefined
+      }
+    }
     const read = function* <Value>(
       current: Source<Value>,
       index: number,
       isStart = false,
+      maybeState: Option.Option<string> = Option.none(),
     ): Generator<void, Read<Value>> {
       const known = current.values[index]
       if (
@@ -790,15 +1043,29 @@ export const make = <Model, Message, Input = void>(
         return { kind: 'limit' }
       }
       yield
-      const item = yield* pullSteps(current, index, work => {
-        const charged = enumerationCharges.get(current) ?? 0
-        const additional = Math.max(0, work - charged)
-        const available = bound.enumerationWork - counters.enumerationWork
-        const consumed = Math.min(additional, available)
-        counters.enumerationWork += consumed
-        enumerationCharges.set(current, charged + consumed)
-        return additional <= available
-      })
+      const readResult: { item: Read<Value> } = { item: { kind: 'limit' } }
+      try {
+        readResult.item = yield* pullSteps(current, index, work => {
+          const charged = enumerationCharges.get(current) ?? 0
+          const additional = Math.max(0, work - charged)
+          const available = bound.enumerationWork - counters.enumerationWork
+          const consumed = Math.min(additional, available)
+          counters.enumerationWork += consumed
+          enumerationCharges.set(current, charged + consumed)
+          return additional <= available
+        })
+      } catch (error) {
+        if (!captureErrors) {
+          throw error
+        }
+        errors.push({
+          reason: error instanceof Error ? error.message : String(error),
+          maybeState,
+        })
+        progress.stopped = 'model-error'
+        return { kind: 'limit' }
+      }
+      const item = readResult.item
       if (item.kind !== 'value') {
         if (item.kind === 'limit') {
           progress.stopped = 'enumeration-limit'
@@ -817,9 +1084,12 @@ export const make = <Model, Message, Input = void>(
     }
 
     const admit = (
-      prepared: PreparedArrival<Model, Message, Input>,
+      prepared: PreparedArrival<Model, Message, Input> | undefined,
       distance: number,
     ): Option.Option<Step> => {
+      if (prepared === undefined) {
+        return Option.none()
+      }
       const knownId = idOf.get(prepared.key)
       const knownDistance =
         knownId === undefined ? undefined : distances.get(knownId)
@@ -857,6 +1127,7 @@ export const make = <Model, Message, Input = void>(
       }
     }
 
+    const starts: Array<Step> = []
     const startOutcomes: Array<Outcome<Input>> = []
     while (progress.stopped === undefined && !progress.startsDone) {
       const item = yield* read(startSource, progress.startIndex, true)
@@ -865,7 +1136,13 @@ export const make = <Model, Message, Input = void>(
       } else if (item.kind === 'value') {
         startOutcomes.push(item.outcome)
         if (search !== 'random') {
-          admit(prepareStart(item.outcome), 0)
+          const step = admit(
+            attempt(() => prepareStart(item.outcome)),
+            0,
+          )
+          if (Option.isSome(step)) {
+            starts.push(step.value)
+          }
         }
         progress.startIndex += 1
       }
@@ -880,13 +1157,16 @@ export const make = <Model, Message, Input = void>(
       const cursor = { index: 0, done: false }
       frontier.add(id)
       while (progress.stopped === undefined && !cursor.done) {
-        const item = yield* read(current, cursor.index)
+        const item = yield* read(current, cursor.index, false, Option.some(id))
         if (item.kind === 'done') {
           expanded.set(id, distance)
           frontier.delete(id)
           cursor.done = true
         } else if (item.kind === 'value') {
-          const maybeStep = admit(prepareNext(node, item.outcome), distance + 1)
+          const maybeStep = admit(
+            attempt(() => prepareNext(node, item.outcome), Option.some(id)),
+            distance + 1,
+          )
           if (Option.isSome(maybeStep)) {
             record(id, maybeStep.value)
           } else {
@@ -925,14 +1205,22 @@ export const make = <Model, Message, Input = void>(
         }
         frontier.add(frame.id)
         expanded.set(frame.id, frame.distance)
-        const item = yield* read(sourceOf(frame.id), frame.index)
+        const item = yield* read(
+          sourceOf(frame.id),
+          frame.index,
+          false,
+          Option.some(frame.id),
+        )
         if (item.kind === 'done') {
           frontier.delete(frame.id)
           frames.pop()
         } else if (item.kind === 'value') {
           frame.index += 1
           const maybeStep = admit(
-            prepareNext(nodeOf(frame.id), item.outcome),
+            attempt(
+              () => prepareNext(nodeOf(frame.id), item.outcome),
+              Option.some(frame.id),
+            ),
             frame.distance + 1,
           )
           if (Option.isNone(maybeStep)) {
@@ -958,7 +1246,13 @@ export const make = <Model, Message, Input = void>(
           continue
         }
         sampledStarts.add(starting)
-        const walk = { at: admit(prepareStart(starting), 0), distance: 0 }
+        const walk = {
+          at: admit(
+            attempt(() => prepareStart(starting)),
+            0,
+          ),
+          distance: 0,
+        }
         while (
           progress.stopped === undefined &&
           Option.isSome(walk.at) &&
@@ -970,7 +1264,12 @@ export const make = <Model, Message, Input = void>(
           const cursor = { index: 0, done: false }
           frontier.add(id)
           while (progress.stopped === undefined && !cursor.done) {
-            const item = yield* read(current, cursor.index)
+            const item = yield* read(
+              current,
+              cursor.index,
+              false,
+              Option.some(id),
+            )
             if (item.kind === 'done') {
               cursor.done = true
             } else if (item.kind === 'value') {
@@ -988,7 +1287,7 @@ export const make = <Model, Message, Input = void>(
             walk.at = Option.none()
           } else {
             walk.at = admit(
-              prepareNext(nodeOf(id), selected),
+              attempt(() => prepareNext(nodeOf(id), selected), Option.some(id)),
               walk.distance + 1,
             )
             if (Option.isSome(walk.at)) {
@@ -1037,6 +1336,19 @@ export const make = <Model, Message, Input = void>(
           transitions: deferred.size,
         },
       },
+      errors,
+      starts,
+      frontier: Array.fromIterable(frontier),
+      enumeration: Array.map(order, state => ({
+        state,
+        status:
+          expanded.has(state) && !frontier.has(state)
+            ? 'complete'
+            : edges.has(state) ||
+                enumerationCharges.has(sources.get(state) ?? {})
+              ? 'partial'
+              : 'unseen',
+      })),
       paths,
       edges,
     }
@@ -1220,55 +1532,200 @@ export const make = <Model, Message, Input = void>(
     return Option.some(current.id)
   }
 
+  const atlasLimits = limits
   const checkSteps = function* (
     depth: number,
     limits?: Limits,
-  ): Generator<void, ReadonlyArray<Violation>> {
-    const result = yield* runSteps(depth, 'breadth', limits)
+  ): Generator<void, CheckReport> {
+    const result = yield* runSteps(depth, 'breadth', limits, true)
     const failures = new Map<string, Violation>()
-    const report = (failure: Violation) => {
-      const previous = failures.get(failure.property)
-      if (
-        previous === undefined ||
-        failure.trace.length < previous.trace.length
-      ) {
-        failures.set(failure.property, failure)
+    const summaries = Array.map(properties, property => ({
+      property,
+      counts: {
+        state: { considered: 0, applicable: 0, evaluated: 0 },
+        transition: { considered: 0, applicable: 0, evaluated: 0 },
+      },
+      maybeWitness:
+        Option.none<Readonly<{ state: string; trace: ReadonlyArray<Step> }>>(),
+      errors: Array.empty<typeof PropertyError.Type>(),
+    }))
+    const evaluate = (
+      summary: (typeof summaries)[number],
+      kind: 'state' | 'transition',
+      state: string,
+      trace: ReadonlyArray<Step>,
+      applies: () => boolean,
+      predicate: () => boolean,
+    ) => {
+      const counts = summary.counts[kind]
+      counts.considered += 1
+      const evaluation: { stage: 'applicability' | 'predicate' } = {
+        stage: 'applicability',
+      }
+      try {
+        if (!applies()) {
+          return
+        }
+        counts.applicable += 1
+        if (
+          Option.isNone(summary.maybeWitness) ||
+          trace.length < summary.maybeWitness.value.trace.length
+        ) {
+          summary.maybeWitness = Option.some({ state, trace })
+        }
+        evaluation.stage = 'predicate'
+        counts.evaluated += 1
+        if (!predicate()) {
+          const previous = failures.get(summary.property.id)
+          if (previous === undefined || trace.length < previous.trace.length) {
+            failures.set(summary.property.id, {
+              propertyId: summary.property.id,
+              property: summary.property.name,
+              kind,
+              trace,
+              state,
+            })
+          }
+        }
+      } catch (error) {
+        summary.errors.push({
+          kind,
+          stage: evaluation.stage,
+          reason: error instanceof Error ? error.message : String(error),
+          state,
+          trace,
+        })
       }
     }
+    const edges: Array<CheckReport['coverage']['edges'][number]> = []
     for (const id of result.reach.states) {
       yield
       const node = nodeOf(id)
       const trace = result.paths.get(id) ?? []
-      Array.forEach(options.properties ?? [], property => {
-        if (property.state !== undefined && !property.state(node)) {
-          report({ property: property.name, trace, state: id })
+      for (const summary of summaries) {
+        yield
+        const property = summary.property
+        const predicate = property.state
+        if (predicate !== undefined) {
+          evaluate(
+            summary,
+            'state',
+            id,
+            trace,
+            () => property.stateApplies?.(node) ?? true,
+            () => predicate(node),
+          )
         }
-      })
-      if (trace.length <= depth) {
-        for (const step of result.edges.get(id) ?? []) {
+      }
+      for (const step of result.edges.get(id) ?? []) {
+        yield
+        const event = messages.get(step)
+        if (event === undefined) {
+          continue
+        }
+        const evidence = event.evidence
+        edges.push({
+          from: id,
+          step,
+          evidence: {
+            kind: evidence.kind,
+            issued: describeCommands(evidence.issued),
+            maybeRequest: Option.map(evidence.maybeRequest, request => ({
+              index: request.index,
+              occurrence: request.occurrence,
+              command: {
+                name: request.command.name,
+                args: request.command.args ?? {},
+              },
+            })),
+          },
+        })
+        for (const summary of summaries) {
           yield
-          const event = messages.get(step)
-          if (event !== undefined) {
-            Array.forEach(options.properties ?? [], property => {
-              if (
-                property.transition !== undefined &&
-                !property.transition(node, event.message, nodeOf(step.to))
-              ) {
-                report({
-                  property: property.name,
-                  trace: Array.append(trace, step),
-                  state: step.to,
-                })
-              }
-            })
+          const property = summary.property
+          const predicate = property.transition
+          if (predicate !== undefined) {
+            const after = nodeOf(step.to)
+            evaluate(
+              summary,
+              'transition',
+              step.to,
+              Array.append(trace, step),
+              () =>
+                property.transitionApplies?.(
+                  node,
+                  event.message,
+                  after,
+                  evidence,
+                ) ?? true,
+              () => predicate(node, event.message, after, evidence),
+            )
           }
         }
       }
     }
-    return Array.fromIterable(failures.values())
+    const report: CheckReport = {
+      version: 1,
+      coverage: {
+        depth,
+        search: 'breadth',
+        limits: limitsOf(limits ?? {}, atlasLimits),
+        reached: result.reach,
+        starts: result.starts,
+        edges,
+        frontier: result.frontier,
+        enumeration: result.enumeration,
+        assumptions: [
+          'Declared finite environment choices only.',
+          'Pure programs and immutable supported execution data.',
+          'One-shot Command replies; interrupts, subscriptions and resources are not automatically modeled.',
+        ],
+      },
+      errors: result.errors,
+      violations: Array.fromIterable(failures.values()),
+      properties: Array.map(summaries, summary => {
+        const maybeViolation = Option.fromNullishOr(
+          failures.get(summary.property.id),
+        )
+        const exercised =
+          summary.counts.state.applicable +
+            summary.counts.transition.applicable >
+          0
+        return {
+          id: summary.property.id,
+          name: summary.property.name,
+          verdict:
+            Array.isReadonlyArrayNonEmpty(result.errors) ||
+            Array.isArrayNonEmpty(summary.errors)
+              ? 'error'
+              : Option.isSome(maybeViolation)
+                ? 'counterexample'
+                : !exercised
+                  ? 'not-exercised'
+                  : result.reach.status === 'complete'
+                    ? 'complete'
+                    : 'inconclusive',
+          applicability: exercised
+            ? 'observed'
+            : result.reach.status === 'complete' &&
+                !Array.some(
+                  summary.errors,
+                  error => error.stage === 'applicability',
+                )
+              ? 'unreachable'
+              : 'unobserved',
+          counts: summary.counts,
+          maybeWitness: summary.maybeWitness,
+          maybeViolation,
+          errors: summary.errors,
+        }
+      }),
+    }
+    identity.of(report, `${program.name}.check`)
+    return report
   }
 
-  const check = (depth: number, limits?: Limits): ReadonlyArray<Violation> =>
+  const check = (depth: number, limits?: Limits): CheckReport =>
     finish(checkSteps(depth, limits))
 
   const groupSteps = function* (
@@ -1371,10 +1828,7 @@ export const make = <Model, Message, Input = void>(
     name: program.name,
     describe: describeReach,
     limits,
-    propertyNames: Array.map(
-      options.properties ?? [],
-      property => property.name,
-    ),
+    propertyNames: Array.map(properties, property => property.name),
     check,
     checkSteps,
     groups,

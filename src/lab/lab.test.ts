@@ -62,6 +62,7 @@ test.each([false, true])(
         properties: hasProperties
           ? [
               {
+                id: 'non-negative',
                 name: 'Non-negative',
                 state: ({ model }) => {
                   check()
@@ -574,13 +575,63 @@ test('property evidence names BFS and depth even with a random gallery', async (
       const inspector = Option.getOrThrow(
         Scene.find(simulation.html, 'aside.inspector'),
       )
-      expect(Scene.textContent(inspector)).toContain('No violations found')
       expect(Scene.textContent(inspector)).toContain(
-        'Breadth-first checks through depth 1, independently of the gallery search.',
+        'no counterexample within limits',
       )
       expect(Scene.textContent(inspector)).toContain(
-        'not all possible executions',
+        'not exercised (unobserved)',
       )
+      expect(
+        Scene.findAll(simulation.html, '.inspector .is-holding'),
+      ).toHaveLength(0)
+      expect(Scene.textContent(inspector)).toContain(
+        'Breadth-first check through depth 1:',
+      )
+      expect(Scene.textContent(inspector)).toContain(
+        "These are the check's own limits and coverage, not the gallery search.",
+      )
+    }),
+  )
+})
+
+test('the inspector renders predicate errors rather than styling them as holding', async () => {
+  const atlas = make(
+    {
+      name: 'Throwing property',
+      Model: Schema.Number,
+      Message: Schema.Number,
+      start: () => ({ model: 0 }),
+      update: model => ({ model }),
+      view: (_model, h) => h.p([], ['Preview']),
+    },
+    { *starts() {} },
+    {
+      properties: [
+        {
+          id: 'throws',
+          name: 'Throws',
+          state: () => {
+            throw new Error('predicate failed to evaluate')
+          },
+        },
+      ],
+    },
+  )
+  const lab = makeLab([atlas])
+  await analysisScene(
+    lab,
+    await settle(lab, lab.init()),
+    Scene.tap(simulation => {
+      const inspector = Option.getOrThrow(
+        Scene.find(simulation.html, 'aside.inspector'),
+      )
+      expect(Scene.textContent(inspector)).toContain('Throws: error')
+      expect(Scene.textContent(inspector)).toContain(
+        'state predicate: predicate failed to evaluate',
+      )
+      expect(
+        Scene.findAll(simulation.html, '.inspector .is-holding'),
+      ).toHaveLength(0)
     }),
   )
 })
