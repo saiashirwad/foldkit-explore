@@ -83,7 +83,7 @@ Import `Environment`, `NextState`, `Transition`, `send`, `answer`, and `pendingR
 - `answer(request, message)` consumes exactly the chosen occurrence, including repeated references to the same Command. Foreign or invalid occurrences are rejected. New Commands from `update` are appended to the remaining queue.
 - Scheduling belongs in `next`: offer every pending occurrence or deliberately restrict the choice. There is no hidden scheduler.
 
-Choices must be deterministic and free of side effects. `outcomes(choices)` returns a lazy generator; requesting the next outcome replays one choice computation. It does not replay application history or enumerate all completed outcomes upfront. A fixture name may appear only once along a path.
+Choices must be deterministic and free of side effects. `outcomes(choices)` is an unbounded convenience iterator of completed outcomes; a fully pruned tree can still do substantial work before it returns. Search engines instead consume `enumerate(choices)`, which yields one replay advancement or sibling-selection checkpoint at a time and retains only one sibling cursor per reached fixture, not a copied path for every sibling. Calling its `return()` releases the active generator. Neither helper replays application history. A fixture name may appear only once along a path.
 
 The Weather environment explores both `submit → clear → answer` and `submit → answer → clear` without hard-coding either scenario. Exclude events only when they cannot happen or are deliberately outside the model. Properties should report undesirable reachable behavior, rather than having the environment prune away the evidence.
 
@@ -98,7 +98,7 @@ const wider = atlas.reach(5, 'breadth', {
 })
 ```
 
-The default limits are 5,000 execution states and 50,000 enumerated alternatives. Limits are non-negative safe integers. `reach(depth, search?, limitsOverride?)` takes **absolute limits**; repeated calls do not silently add another budget.
+The default limits are 5,000 execution states, 50,000 enumerated alternatives, and 1,000,000 enumeration work units. The optional `enumerationWork` allowance is separate from `transitions`. Limits are non-negative safe integers. `reach(depth, search?, limitsOverride?)` takes **absolute limits**; repeated calls do not silently add another budget.
 
 | Result status | Meaning |
 | --- | --- |
@@ -106,18 +106,22 @@ The default limits are 5,000 execution states and 50,000 enumerated alternatives
 | `depth-limit` | The depth frontier remains, or Random left starting or successor work unsampled. |
 | `state-limit` | The next execution state could not be admitted within the state cap. |
 | `transition-limit` | The enumerated-alternative work allowance was consumed before exhaustion was established. |
+| `enumeration-limit` | Fixture replay/branch work was consumed before enumeration exhaustion was established. |
 
 `reached.counters` reports:
 
 - `states`: distinct execution states included in this result;
 - `transitions`: enumerated starting **and** next-step alternatives;
-- `starts`: the starting-alternative subset of `transitions`.
+- `starts`: the starting-alternative subset of `transitions`;
+- `enumerationWork`: checkpointed fixture traversal work, including branches that yield no outcome.
+
+`counters.enumerationWork` counts checkpointed enumerator advances, including replayed fixture visits, completed outcomes, sibling selections/exhaustion, empty leaves, and the final completion probe. Atlas charges retained prefixes against each run's absolute allowance without redoing them; Comparison accumulates the same units across `resume`. Exact exhaustion can conservatively remain limited until a further unit establishes completion. Option names are still collected once per reached fixture, and each application advancement can do arbitrary work. Completed alternative counters retain their existing meanings.
 
 Repeated alternatives count as work even if their resulting Models and pending queues merge into one state. State and transition limits are checked inside start and successor enumeration, rather than between entire breadth-first layers.
 
 Each source retains its iterator and yielded alternatives. An arrival prepared just before a state or depth stop remains buffered; resuming admits that same arrival without calling `start` or `update` again. A result exactly at its transition limit may conservatively report `transition-limit` until a larger allowance lets the iterator establish exhaustion.
 
-`unfinishedWork` identifies unresolved starting work, the number of execution states awaiting expansion, and the number of buffered arrivals awaiting admission. These are known unfinished items, not a prediction of how many outcomes an unenumerated generator contains. The limits bound admitted states and enumerated alternatives; they are not a process-memory cap or a timeout for arbitrary code inside a generator. One Model can itself be large, and the atlas retains caches from earlier searches and live interactions.
+`unfinishedWork` identifies unresolved starting work, the number of execution states awaiting expansion, and the number of buffered arrivals awaiting admission. These are known unfinished items, not a prediction of how many outcomes an unenumerated generator contains. The limits bound admitted states, enumerated alternatives, and fixture traversal checkpoints; they are not a process-memory cap or a timeout for arbitrary code inside a generator. One Model can itself be large, and the atlas retains caches from earlier searches and live interactions.
 
 The search modes are breadth-first, depth-first, and 32 deterministic seeded random walks. Depth-first revisits an execution discovered later on a shorter path. Both exhaustive traversals reach the same bounded-depth state set when their work and state allowances suffice. Random samples paths and can leave work unexplored even when sampled states are terminal.
 
@@ -172,7 +176,7 @@ Findings distinguish rendered content, added or removed actions, pending work, n
 
 When only one version offers an event, the comparison applies it on that side and records the real successor. That branch stops there. It does not invent a successor on the other side or claim to explore later behavior down an unmatched branch. Missing-event findings require both sides' alternative enumeration to finish, so an unfinished iterator is not mistaken for an absent action. Duplicate semantic event keys within one state's environment are rejected as ambiguous; offer each semantic event once.
 
-`comparison.status` uses the atlas status vocabulary plus `pair-limit`. The required comparison limits are `depth`, `states` per side, and `transitions`; optional `pairs` defaults to the state limit. Comparison transition work counts each shared starting alternative once and each before/after next-step alternative separately. Its counters report starts, states on each side, pairs, total work, and next-step alternatives on each side.
+`comparison.status` uses the atlas status vocabulary plus `pair-limit`. The required comparison limits are `depth`, `states` per side, and `transitions`; optional `pairs` defaults to the state limit and `enumerationWork` defaults to 1,000,000. Comparison transition work counts each shared starting alternative once and each before/after next-step alternative separately. Its counters report starts, states on each side, pairs, total alternatives, next-step alternatives on each side, and separate enumeration work (shared starts once and both sides' fixture traversal separately).
 
 `comparison.unfinishedWork` lists the remaining start or pair enumerations. `comparison.resume(limits)` continues retained work; every supplied limit must be at least its previous value. Create a fresh comparison to use smaller limits. `comparison.replay(trace)` constructs fresh program executions from the recorded choices, verifies the events and recorded evidence, and returns the replayed trace.
 

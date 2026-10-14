@@ -4,7 +4,13 @@ import type { Html, HtmlBuilder } from 'foldkit/html'
 import { defineView } from 'foldkit/submodel'
 
 import { formatValue } from './display'
-import { type Choices, Decision, type Outcome, outcomes } from './fixture'
+import {
+  type Choices,
+  Decision,
+  type EnumerationStep,
+  type Outcome,
+  enumerate,
+} from './fixture'
 import { makeIdentity } from './identity'
 import { type InputDomain, inspect } from './interactions'
 import {
@@ -108,10 +114,15 @@ export type Property<Model, Message> = Readonly<{
 export const Search = Schema.Literals(['breadth', 'depth', 'random'])
 export type Search = typeof Search.Type
 
-export type Limits = Readonly<{ states?: number; transitions?: number }>
+export type Limits = Readonly<{
+  states?: number
+  transitions?: number
+  enumerationWork?: number
+}>
 export type ExplorationLimits = Readonly<{
   states: number
   transitions: number
+  enumerationWork: number
 }>
 export type Options<Model, Message> = Readonly<{
   properties?: ReadonlyArray<Property<Model, Message>>
@@ -150,12 +161,18 @@ export type ReachStatus =
   | 'depth-limit'
   | 'state-limit'
   | 'transition-limit'
+  | 'enumeration-limit'
 export type SuccessorStatus = 'unseen' | 'partial' | 'complete'
 
 export type Reach = Readonly<{
   states: ReadonlyArray<string>
   status: ReachStatus
-  counters: Readonly<{ states: number; transitions: number; starts: number }>
+  counters: Readonly<{
+    states: number
+    transitions: number
+    starts: number
+    enumerationWork: number
+  }>
   unfinishedWork: Readonly<{
     starts: boolean
     states: number
@@ -228,7 +245,9 @@ type PreparedArrival<Model, Message, Input> = {
 }
 
 type Source<Value> = {
-  iterator: Iterator<Outcome<Value>>
+  iterator: Iterator<EnumerationStep<Value>>
+  work: number
+  valueWork: Array<number>
   values: Array<Outcome<Value>>
   done: boolean
 }
@@ -245,7 +264,9 @@ type SearchResult = Readonly<{
 }>
 
 const source = <Value>(choices: () => Choices<Value>): Source<Value> => ({
-  iterator: outcomes(choices),
+  iterator: enumerate(choices),
+  work: 0,
+  valueWork: [],
   values: [],
   done: false,
 })
@@ -290,6 +311,10 @@ const limitsOf = (
     override.transitions ?? fallback.transitions,
     'Transition limit',
   ),
+  enumerationWork: limit(
+    override.enumerationWork ?? fallback.enumerationWork,
+    'Enumeration work limit',
+  ),
 })
 
 export const make = <Model, Message, Input = void>(
@@ -300,6 +325,7 @@ export const make = <Model, Message, Input = void>(
   const limits = limitsOf(options.limits ?? {}, {
     states: 5_000,
     transitions: 50_000,
+    enumerationWork: 1_000_000,
   })
   const identity = makeIdentity()
   const screens = makeIdentity()
@@ -511,7 +537,11 @@ export const make = <Model, Message, Input = void>(
       next === undefined
         ? {
             iterator:
-              Array.empty<Outcome<Transition<Message>>>()[Symbol.iterator](),
+              Array.empty<EnumerationStep<Transition<Message>>>()[
+                Symbol.iterator
+              ](),
+            work: 0,
+            valueWork: [],
             values: [],
             done: true,
           }
@@ -536,22 +566,31 @@ export const make = <Model, Message, Input = void>(
   const pull = <Value>(
     current: Source<Value>,
     index: number,
-  ): Option.Option<Outcome<Value>> => {
-    const known = current.values[index]
-    if (known !== undefined) {
-      return Option.some(known)
+    charge: (work: number) => boolean = () => true,
+  ): Read<Value> => {
+    while (true) {
+      const known = current.values[index]
+      if (known !== undefined) {
+        return charge(current.valueWork[index] ?? current.work)
+          ? { kind: 'value', outcome: known }
+          : { kind: 'limit' }
+      }
+      if (current.done) {
+        return charge(current.work) ? { kind: 'done' } : { kind: 'limit' }
+      }
+      if (!charge(current.work + 1)) {
+        return { kind: 'limit' }
+      }
+      const item = current.iterator.next()
+      current.work += 1
+      revision.value += 1
+      if (item.done) {
+        current.done = true
+      } else if (item.value.kind === 'outcome') {
+        current.values.push(item.value.outcome)
+        current.valueWork.push(current.work)
+      }
     }
-    if (current.done) {
-      return Option.none()
-    }
-    const item = current.iterator.next()
-    revision.value += 1
-    if (item.done) {
-      current.done = true
-      return Option.none()
-    }
-    current.values.push(item.value)
-    return Option.some(item.value)
   }
 
   const knownStep = <Value>(outcome: Outcome<Value>): Option.Option<Step> =>
@@ -576,11 +615,15 @@ export const make = <Model, Message, Input = void>(
     const current = sourceOf(id)
     const cursor = { index: 0 }
     while (cursor.index < bound.transitions) {
-      const maybeOutcome = pull(current, cursor.index)
-      if (Option.isNone(maybeOutcome)) {
+      const item = pull(
+        current,
+        cursor.index,
+        work => work <= bound.enumerationWork,
+      )
+      if (item.kind !== 'value') {
         return result
       }
-      const prepared = prepareNext(node, maybeOutcome.value)
+      const prepared = prepareNext(node, item.outcome)
       const known = idOf.get(prepared.key)
       if (
         (known === undefined || !admitted.has(known)) &&
@@ -603,7 +646,7 @@ export const make = <Model, Message, Input = void>(
   ): SearchResult => {
     const depth = limit(requestedDepth, 'Depth')
     const bound = limitsOf(override, limits)
-    const cacheKey = `${search} ${depth} ${bound.states} ${bound.transitions}`
+    const cacheKey = `${search} ${depth} ${bound.states} ${bound.transitions} ${bound.enumerationWork}`
     const known = results.get(cacheKey)
     if (known?.revision === revision.value) {
       return known.result
@@ -616,9 +659,19 @@ export const make = <Model, Message, Input = void>(
     const frontier = new Set<string>()
     const deferred = new Set<object>()
     const charged = new Set<object>()
-    const counters = { states: 0, transitions: 0, starts: 0 }
+    const counters = {
+      states: 0,
+      transitions: 0,
+      starts: 0,
+      enumerationWork: 0,
+    }
+    const enumerationCharges = new Map<object, number>()
     const progress: {
-      stopped: 'state-limit' | 'transition-limit' | undefined
+      stopped:
+        | 'state-limit'
+        | 'transition-limit'
+        | 'enumeration-limit'
+        | undefined
       startsDone: boolean
       startIndex: number
     } = {
@@ -633,21 +686,29 @@ export const make = <Model, Message, Input = void>(
       isStart = false,
     ): Read<Value> => {
       const known = current.values[index]
-      if (known === undefined && current.done) {
-        return { kind: 'done' }
-      }
       if (
-        (known === undefined || !charged.has(known)) &&
+        (known === undefined ? !current.done : !charged.has(known)) &&
         counters.transitions >= bound.transitions
       ) {
         progress.stopped = 'transition-limit'
         return { kind: 'limit' }
       }
-      const maybeOutcome = pull(current, index)
-      if (Option.isNone(maybeOutcome)) {
-        return { kind: 'done' }
+      const item = pull(current, index, work => {
+        const charged = enumerationCharges.get(current) ?? 0
+        const additional = Math.max(0, work - charged)
+        const available = bound.enumerationWork - counters.enumerationWork
+        const consumed = Math.min(additional, available)
+        counters.enumerationWork += consumed
+        enumerationCharges.set(current, charged + consumed)
+        return additional <= available
+      })
+      if (item.kind !== 'value') {
+        if (item.kind === 'limit') {
+          progress.stopped = 'enumeration-limit'
+        }
+        return item
       }
-      const outcome = maybeOutcome.value
+      const outcome = item.outcome
       if (!charged.has(outcome)) {
         charged.add(outcome)
         counters.transitions += 1
@@ -928,22 +989,22 @@ export const make = <Model, Message, Input = void>(
     const current = sourceOf(id)
     const cursor = { index: 0 }
     while (true) {
-      const maybeOutcome = pull(current, cursor.index)
-      if (Option.isNone(maybeOutcome)) {
+      const item = pull(current, cursor.index)
+      if (item.kind !== 'value') {
         return Option.none()
       }
       if (
         isSameHop(
           {
             ...hop,
-            kind: maybeOutcome.value.value.kind,
-            decisions: maybeOutcome.value.decisions,
+            kind: item.outcome.value.kind,
+            decisions: item.outcome.decisions,
           },
           hop,
         )
       ) {
         return Option.some(
-          publishArrival(prepareNext(nodeOf(id), maybeOutcome.value)).to,
+          publishArrival(prepareNext(nodeOf(id), item.outcome)).to,
         )
       }
       cursor.index += 1
@@ -962,11 +1023,11 @@ export const make = <Model, Message, Input = void>(
   const resolveStart = (hop: Hop): Option.Option<string> => {
     const cursor = { index: 0 }
     while (true) {
-      const maybeOutcome = pull(startSource, cursor.index)
-      if (Option.isNone(maybeOutcome)) {
+      const item = pull(startSource, cursor.index)
+      if (item.kind !== 'value') {
         return Option.none()
       }
-      const step = publishArrival(prepareStart(maybeOutcome.value))
+      const step = publishArrival(prepareStart(item.outcome))
       if (isSameHop(step, hop)) {
         return Option.some(step.to)
       }
@@ -1055,7 +1116,8 @@ export const make = <Model, Message, Input = void>(
       `    ${formatValue(encodeModel(nodeOf(id).model))}`,
       ...Array.map(
         nodeOf(id).pending,
-        command => `    pending ${command.name} ${formatValue(command.args ?? {})}`,
+        command =>
+          `    pending ${command.name} ${formatValue(command.args ?? {})}`,
       ),
       ...Array.match(edges.get(id) ?? [], {
         onEmpty: () => [],

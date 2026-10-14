@@ -320,7 +320,12 @@ test('duplicate successor alternatives consume transition work and resume withou
   expect(updates).toEqual([0, 1, 2])
   const resumed = atlas.reach(1, 'breadth', { transitions: 102 })
   expect(resumed.status).toBe('complete')
-  expect(resumed.counters).toEqual({ states: 1, transitions: 101, starts: 1 })
+  expect(resumed.counters).toEqual({
+    states: 1,
+    transitions: 101,
+    starts: 1,
+    enumerationWork: 305,
+  })
   expect(describe(atlas, 1)).toBe(boundedDescription)
   expect(updates).toEqual(Array.range(0, 99))
 })

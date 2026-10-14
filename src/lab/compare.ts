@@ -18,7 +18,9 @@ import { formatValue } from './display'
 import {
   type Choices,
   type Decision,
+  type EnumerationStep,
   type Outcome,
+  enumerate,
   outcomes,
   replay,
 } from './fixture'
@@ -44,6 +46,7 @@ export type ComparisonLimits = Readonly<{
   states: number
   transitions: number
   pairs?: number
+  enumerationWork?: number
 }>
 
 export type ComparisonCounters = Readonly<{
@@ -54,6 +57,7 @@ export type ComparisonCounters = Readonly<{
   transitions: number
   beforeTransitions: number
   afterTransitions: number
+  enumerationWork: number
 }>
 
 export type Execution = Readonly<{
@@ -181,7 +185,7 @@ type Prepared<Model, Message, Input> = Readonly<{
 }>
 
 type Enumeration<Message> = {
-  iterator: Iterator<Outcome<Transition<Message>>> | undefined
+  iterator: Iterator<EnumerationStep<Transition<Message>>> | undefined
   status: SuccessorStatus
   events: Map<string, Event<Message>>
 }
@@ -364,6 +368,10 @@ const normalizedLimits = (
   states: limit(limits.states, 'State limit'),
   transitions: limit(limits.transitions, 'Transition limit'),
   pairs: limit(limits.pairs ?? limits.states, 'Pair limit'),
+  enumerationWork: limit(
+    limits.enumerationWork ?? 1_000_000,
+    'Enumeration work limit',
+  ),
 })
 
 export const compare = <BeforeModel, AfterModel, Message, Input = void>(
@@ -615,12 +623,13 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
     starts: 0,
     beforeTransitions: 0,
     afterTransitions: 0,
+    enumerationWork: 0,
     startsComplete: false,
   }
   const transitions = () =>
     work.starts + work.beforeTransitions + work.afterTransitions
   const stopped: { status: ComparisonStatus } = { status: 'complete' }
-  const starts = outcomes(environment.starts)[Symbol.iterator]()
+  const starts = enumerate(environment.starts)
   const startBuffer: {
     value:
       | Readonly<{
@@ -933,16 +942,25 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
         stopped.status = 'transition-limit'
         return false
       }
+      if (work.enumerationWork >= work.limits.enumerationWork) {
+        stopped.status = 'enumeration-limit'
+        return false
+      }
       const step = starts.next()
+      work.enumerationWork += 1
       if (step.done) {
         work.startsComplete = true
         return true
       }
+      if (step.value.kind === 'work') {
+        return true
+      }
+      const outcome = step.value.outcome
       work.starts += 1
       startBuffer.value = {
-        outcome: step.value,
-        before: beforeRuntime.start(step.value.value, step.value.decisions),
-        after: afterRuntime.start(step.value.value, step.value.decisions),
+        outcome,
+        before: beforeRuntime.start(outcome.value, outcome.decisions),
+        after: afterRuntime.start(outcome.value, outcome.decisions),
       }
     }
     const buffered = startBuffer.value
@@ -1107,31 +1125,43 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
     counterpart: Enumeration<Message>,
     ready: Array<string>,
     side: ComparisonSide,
+    completed: () => void,
   ): boolean => {
     if (cursor.status === 'unseen') {
       const next = runtime.next(node)
       if (next === undefined) {
         cursor.status = 'complete'
+        completed()
         return true
       }
-      cursor.iterator = outcomes(next)[Symbol.iterator]()
+      cursor.iterator = enumerate(next)
       cursor.status = 'partial'
     }
     if (transitions() >= work.limits.transitions) {
       stopped.status = 'transition-limit'
       return false
     }
+    if (work.enumerationWork >= work.limits.enumerationWork) {
+      stopped.status = 'enumeration-limit'
+      return false
+    }
     const result = cursor.iterator?.next()
+    work.enumerationWork += 1
     if (result === undefined || result.done) {
       cursor.status = 'complete'
+      completed()
       return true
     }
+    if (result.value.kind === 'work') {
+      return true
+    }
+    completed()
     if (side === 'before') {
       work.beforeTransitions += 1
     } else {
       work.afterTransitions += 1
     }
-    const selected = runtime.event(node, result.value)
+    const selected = runtime.event(node, result.value.outcome)
     if (cursor.events.has(selected.evidence.key)) {
       throw new Error(
         `Duplicate comparison event key in ${side} ${node.id}; environment alternatives must identify each semantic event unambiguously.`,
@@ -1176,7 +1206,9 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
       pair.afterEvents.status === 'complete'
         ? 'before'
         : 'after'
-    pair.turn = side === 'before' ? 'after' : 'before'
+    const completed = () => {
+      pair.turn = side === 'before' ? 'after' : 'before'
+    }
     return side === 'before'
       ? consume(
           beforeRuntime,
@@ -1185,6 +1217,7 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
           pair.afterEvents,
           pair.ready,
           side,
+          completed,
         )
       : consume(
           afterRuntime,
@@ -1193,6 +1226,7 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
           pair.beforeEvents,
           pair.ready,
           side,
+          completed,
         )
   }
   const run = () => {
@@ -1373,6 +1407,7 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
         transitions: transitions(),
         beforeTransitions: work.beforeTransitions,
         afterTransitions: work.afterTransitions,
+        enumerationWork: work.enumerationWork,
       }
     },
     get findings() {
@@ -1413,7 +1448,8 @@ export const compare = <BeforeModel, AfterModel, Message, Input = void>(
         next.depth < work.limits.depth ||
         next.states < work.limits.states ||
         next.transitions < work.limits.transitions ||
-        next.pairs < work.limits.pairs
+        next.pairs < work.limits.pairs ||
+        next.enumerationWork < work.limits.enumerationWork
       ) {
         throw new Error(
           'Comparison resume limits cannot decrease; start a fresh comparison for smaller limits.',

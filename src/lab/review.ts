@@ -281,13 +281,13 @@ const coverageView = (comparison: Comparison, h: HtmlBuilder<Message>): Html =>
       h.p(
         [],
         [
-          `${comparison.counters.transitions} enumerated alternatives, including ${comparison.counters.starts} starts. ${comparison.unfinishedWork.length} unfinished work items.`,
+          `${comparison.counters.transitions} enumerated alternatives, including ${comparison.counters.starts} starts; ${comparison.counters.enumerationWork} enumeration work. ${comparison.unfinishedWork.length} unfinished work items.`,
         ],
       ),
       h.p(
         [],
         [
-          `Limits: depth ${comparison.limits.depth}; ${comparison.limits.states} states per version; ${comparison.limits.pairs} pairs; ${comparison.limits.transitions} alternatives.`,
+          `Limits: depth ${comparison.limits.depth}; ${comparison.limits.states} states per version; ${comparison.limits.pairs} pairs; ${comparison.limits.transitions} alternatives; ${comparison.limits.enumerationWork} enumeration work.`,
         ],
       ),
       h.p(

@@ -737,7 +737,7 @@ const inspectorView = (
           h.p(
             [],
             [
-              `Depth ${depth}; limits ${atlas.limits.states} states and ${atlas.limits.transitions} alternatives; ${isComplete ? 'complete within declared environment' : reached.status}.`,
+              `Depth ${depth}; limits ${atlas.limits.states} states, ${atlas.limits.transitions} alternatives, and ${atlas.limits.enumerationWork} enumeration work; ${isComplete ? 'complete within declared environment' : reached.status}.`,
             ],
           ),
           h.p([], [atlas.grouping]),

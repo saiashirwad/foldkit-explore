@@ -50,27 +50,100 @@ export const replay = <Output>(
   })
 }
 
+export type EnumerationStep<Output> =
+  | Readonly<{ kind: 'work' }>
+  | Readonly<{ kind: 'outcome'; outcome: Outcome<Output> }>
+
+type Branch = {
+  readonly path: ReadonlyArray<Decision>
+  readonly name: string
+  readonly options: Iterator<string>
+}
+
+// NOTE: Each next() performs at most one generator advancement or sibling
+// selection. Enumerators own suspended generators; return() releases them.
+export function* enumerate<Output>(
+  choices: () => Choices<Output>,
+  decisions: ReadonlyArray<Decision> = [],
+): Generator<EnumerationStep<Output>, void, unknown> {
+  const branches: Array<Branch> = []
+  const cursor: { path: ReadonlyArray<Decision> | undefined } = {
+    path: decisions,
+  }
+  while (cursor.path !== undefined || Array.isArrayNonEmpty(branches)) {
+    if (cursor.path === undefined) {
+      const branch = branches.at(-1)
+      const option = branch?.options.next()
+      if (branch !== undefined && option !== undefined && !option.done) {
+        cursor.path = Array.append(branch.path, {
+          fixture: branch.name,
+          option: option.value,
+        })
+      } else {
+        branches.pop()
+      }
+      yield { kind: 'work' }
+    } else {
+      const path = cursor.path
+      const generator: Iterator<Fixture, Output, unknown> = choices()
+      try {
+        const replayed = { index: 0, step: generator.next() }
+        while (!replayed.step.done && replayed.index < path.length) {
+          yield { kind: 'work' }
+          const decision = path[replayed.index]
+          if (
+            decision === undefined ||
+            replayed.step.value.name !== decision.fixture ||
+            !Object.hasOwn(replayed.step.value.cases, decision.option)
+          ) {
+            throw new Error(
+              'Fixture replay diverged; choices must be deterministic.',
+            )
+          }
+          replayed.step = generator.next(
+            replayed.step.value.cases[decision.option],
+          )
+          replayed.index += 1
+        }
+        if (replayed.index !== path.length) {
+          throw new Error(
+            'Fixture replay diverged; choices must be deterministic.',
+          )
+        }
+        if (replayed.step.done) {
+          yield {
+            kind: 'outcome',
+            outcome: { decisions: path, value: replayed.step.value },
+          }
+        } else {
+          const { name, cases } = replayed.step.value
+          if (Array.some(path, decision => decision.fixture === name)) {
+            throw new Error(`Fixture "${name}" appears twice along one path.`)
+          }
+          branches.push({
+            path,
+            name,
+            options: Record.keys(cases)[Symbol.iterator](),
+          })
+          yield { kind: 'work' }
+        }
+      } finally {
+        generator.return?.()
+      }
+      cursor.path = undefined
+    }
+  }
+}
+
+// NOTE: This convenience iterator is unbounded. Search engines consume
+// enumerate() directly so pruned paths and replay work remain interruptible.
 export function* outcomes<Output>(
   choices: () => Choices<Output>,
   decisions: ReadonlyArray<Decision> = [],
 ): Generator<Outcome<Output>, void, unknown> {
-  const paths = [decisions]
-  while (Array.isArrayNonEmpty(paths)) {
-    const path = paths.pop()
-    if (path === undefined) {
-      return
-    }
-    const step = replay(choices, path)
-    if (step.done) {
-      yield { decisions: path, value: step.value }
-    } else {
-      const { name, cases } = step.value
-      if (Array.some(path, decision => decision.fixture === name)) {
-        throw new Error(`Fixture "${name}" appears twice along one path.`)
-      }
-      Array.forEach(Array.reverse(Record.keys(cases)), option =>
-        paths.push(Array.append(path, { fixture: name, option })),
-      )
+  for (const step of enumerate(choices, decisions)) {
+    if (step.kind === 'outcome') {
+      yield step.outcome
     }
   }
 }
