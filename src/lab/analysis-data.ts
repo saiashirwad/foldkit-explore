@@ -1,8 +1,14 @@
 import { Schema } from 'effect'
 import { defineTaggedUnion } from 'foldkit/schema'
 
-import { CheckReport, ReachSnapshot, StateSnapshot } from './atlas'
-export { ReachSnapshot } from './atlas'
+import {
+  CheckReport,
+  ReachSnapshot,
+  ReachStatus,
+  Search,
+  StateSnapshot,
+  SuccessorStatus,
+} from './atlas'
 import { Decision } from './fixture'
 import type { Screen } from './interactions'
 
@@ -18,7 +24,7 @@ export type AnalysisStatus = typeof AnalysisStatus.Type
 
 export const GallerySnapshot = Schema.Struct({
   depth: Schema.Number,
-  search: Schema.Literals(['breadth', 'depth', 'random']),
+  search: Search,
   reached: ReachSnapshot,
   states: Schema.Array(StateSnapshot),
   groups: Schema.Array(
@@ -99,16 +105,7 @@ export const ExampleSnapshot = Schema.Struct({
 })
 export const ComparisonSnapshot = Schema.Struct({
   name: Schema.String,
-  status: Schema.Literals([
-    'complete',
-    'depth-limit',
-    'state-limit',
-    'transition-limit',
-    'enumeration-limit',
-    'model-error',
-    'pair-limit',
-    'running',
-  ]),
+  status: Schema.Literals([...ReachStatus.literals, 'pair-limit', 'running']),
   limits: Schema.Struct({
     depth: Schema.Number,
     states: Schema.Number,
@@ -163,8 +160,8 @@ export const ComparisonSnapshot = Schema.Struct({
       kind: Schema.Literals(['starts', 'pair']),
       pair: Schema.String,
       depth: Schema.Number,
-      before: Schema.Literals(['unseen', 'partial', 'complete']),
-      after: Schema.Literals(['unseen', 'partial', 'complete']),
+      before: SuccessorStatus,
+      after: SuccessorStatus,
       beforeAlternatives: Schema.Number,
       afterAlternatives: Schema.Number,
     }),

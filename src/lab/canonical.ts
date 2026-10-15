@@ -75,3 +75,6 @@ export const canonical = (value: unknown): string => {
   }
   return encode(value, '$')
 }
+
+export const moveKey = (encodedMessage: unknown): string =>
+  canonical(['Move', encodedMessage])

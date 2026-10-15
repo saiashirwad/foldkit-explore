@@ -7,19 +7,28 @@ import { ReplayCancelledError } from './replay'
 
 export const CHUNK_SIZE = 128
 
-export type Session = Readonly<{ dispose: () => void }>
-export type RunRequest = Readonly<{
+type Session = Readonly<{ dispose: () => void }>
+type RunRequest = Readonly<{
   runId: number
   key: string
   reset: boolean
 }>
-export type RunResult<Value> = Readonly<{
+type RunResult<Value> = Readonly<{
   status: AnalysisStatus
   maybeValue: Option.Option<Value>
 }>
 
+// NOTE: One identity remembers frozen references across snapshots, so data
+// already frozen by an earlier snapshot is not rescanned. Clearing its buckets
+// keeps it from holding those snapshots.
+const snapshots = makeIdentity()
+
 export const immutable = <Value>(value: Value): Value => {
-  makeIdentity().of(value, 'analysis snapshot')
+  try {
+    snapshots.of(value, 'analysis snapshot')
+  } finally {
+    snapshots.clear()
+  }
   return value
 }
 

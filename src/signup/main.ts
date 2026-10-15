@@ -186,17 +186,18 @@ const stepIndex = (step: Step): number =>
     Failed: () => 2,
   })
 
-const progressView = (step: Step, h: HtmlBuilder<Message>): Html =>
-  h.ol(
+const progressView = (step: Step, h: HtmlBuilder<Message>): Html => {
+  const active = stepIndex(step)
+  return h.ol(
     [h.Class('flex gap-1.5')],
     Array.map(steps, (name, index) =>
       h.keyed('li')(
         name,
         [
-          h.AriaCurrent(index === stepIndex(step) ? 'step' : 'false'),
+          h.AriaCurrent(index === active ? 'step' : 'false'),
           h.Class(
             `flex-1 border-t-2 pt-1.5 text-[11px] font-medium ${
-              index <= stepIndex(step)
+              index <= active
                 ? 'border-violet-500 text-violet-700'
                 : 'border-slate-200 text-slate-400'
             }`,
@@ -206,6 +207,7 @@ const progressView = (step: Step, h: HtmlBuilder<Message>): Html =>
       ),
     ),
   )
+}
 
 const availabilityView = (
   availability: Availability,

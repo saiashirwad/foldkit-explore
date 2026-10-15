@@ -1,7 +1,12 @@
 import { Array, Option, Schema } from 'effect'
 import { defineTaggedUnion } from 'foldkit/schema'
 
-import { dataPath, dataShape, unsupportedData } from './execution-data'
+import {
+  dataPath,
+  dataShape,
+  numberToken,
+  unsupportedData,
+} from './execution-data'
 import { ReplayDivergenceError } from './replay'
 
 type NestedData =
@@ -79,7 +84,7 @@ export const encodeEvidenceData = (
     }
     if (typeof current === 'number') {
       return EvidenceData.Number({
-        value: Object.is(current, -0) ? '-0' : String(current),
+        value: numberToken(current),
       })
     }
     if (typeof current === 'bigint') {
@@ -143,7 +148,7 @@ export const decodeEvidenceData = (value: EvidenceData): unknown => {
       String: ({ value }) => value,
       Number: ({ value }) => {
         const number = Number(value)
-        if ((Object.is(number, -0) ? '-0' : String(number)) !== value) {
+        if (numberToken(number) !== value) {
           throw new ReplayDivergenceError(
             'artifact',
             'Evidence contains an invalid number token.',

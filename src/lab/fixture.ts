@@ -4,7 +4,7 @@ import { ReplayDivergenceError } from './replay'
 
 // FIXTURE
 
-export type Fixture = Readonly<{
+type Fixture = Readonly<{
   name: string
   cases: Readonly<Record<string, unknown>>
 }>
@@ -34,23 +34,6 @@ export type Outcome<Output> = Readonly<{
   decisions: ReadonlyArray<Decision>
   value: Output
 }>
-
-export const replay = <Output>(
-  choices: () => Choices<Output>,
-  decisions: ReadonlyArray<Decision>,
-) => {
-  const generator = choices()
-  return Array.reduce(decisions, generator.next(), (step, decision) => {
-    if (
-      step.done ||
-      step.value.name !== decision.fixture ||
-      !Object.hasOwn(step.value.cases, decision.option)
-    ) {
-      throw new Error('Fixture replay diverged; choices must be deterministic.')
-    }
-    return generator.next(step.value.cases[decision.option])
-  })
-}
 
 // NOTE: Selected-decision replay never visits sibling paths and closes the
 // authored generator when the caller cancels between advancement checkpoints.
@@ -115,12 +98,9 @@ type Branch = {
 // selection. Enumerators own suspended generators; return() releases them.
 export function* enumerate<Output>(
   choices: () => Choices<Output>,
-  decisions: ReadonlyArray<Decision> = [],
 ): Generator<EnumerationStep<Output>, void, unknown> {
   const branches: Array<Branch> = []
-  const cursor: { path: ReadonlyArray<Decision> | undefined } = {
-    path: decisions,
-  }
+  const cursor: { path: ReadonlyArray<Decision> | undefined } = { path: [] }
   while (cursor.path !== undefined || Array.isArrayNonEmpty(branches)) {
     if (cursor.path === undefined) {
       const branch = branches.at(-1)
@@ -190,9 +170,8 @@ export function* enumerate<Output>(
 // enumerate() directly so pruned paths and replay work remain interruptible.
 export function* outcomes<Output>(
   choices: () => Choices<Output>,
-  decisions: ReadonlyArray<Decision> = [],
 ): Generator<Outcome<Output>, void, unknown> {
-  for (const step of enumerate(choices, decisions)) {
+  for (const step of enumerate(choices)) {
     if (step.kind === 'outcome') {
       yield step.outcome
     }

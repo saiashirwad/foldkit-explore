@@ -41,7 +41,7 @@ function* next(state: NextState<Model, Message>): Choices<Transition<Message>> {
   return answer(request, message)
 }
 
-export function* WeatherStarts(): Choices<string> {
+function* WeatherStarts(): Choices<string> {
   return yield* fixture('zip', { empty: '', valid: '90210' })
 }
 

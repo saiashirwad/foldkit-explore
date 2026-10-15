@@ -4,18 +4,21 @@ import type { Html, HtmlBuilder } from 'foldkit/html'
 import { defineView } from 'foldkit/submodel'
 
 import {
+  DEFAULT_ENUMERATION_WORK,
   type Environment,
   type Program,
   type Property,
   type ReachStatus,
   type SuccessorStatus,
   type Transition,
+  isPendingRequest,
   limit,
+  occurrenceOf,
   registerProperties,
   remaining,
   transitionEvidence,
 } from './atlas'
-import { canonical, ownDataEntries } from './canonical'
+import { canonical, moveKey, ownDataEntries } from './canonical'
 import { formatValue } from './display'
 import { InvalidModelError } from './execution-error'
 import {
@@ -32,8 +35,10 @@ import {
   type CommandDescription,
   type Observation,
   commandKey,
+  describeCommand,
   describeCommands,
   freezeCommands,
+  interactionsRecord,
   observationOf,
 } from './observation'
 import {
@@ -45,7 +50,7 @@ import {
 
 export type ComparisonSide = 'before' | 'after'
 
-export type ComparisonStatus = ReachStatus | 'pair-limit' | 'running'
+type ComparisonStatus = ReachStatus | 'pair-limit' | 'running'
 
 // NOTE: States are capped independently on each side. The pair cap defaults
 // to the state cap. Transitions count a shared start once and every consumed
@@ -58,7 +63,7 @@ export type ComparisonLimits = Readonly<{
   enumerationWork?: number
 }>
 
-export type ComparisonCounters = Readonly<{
+type ComparisonCounters = Readonly<{
   starts: number
   beforeStates: number
   afterStates: number
@@ -78,7 +83,7 @@ export type Execution = Readonly<{
   observation: Observation
 }>
 
-export type ComparisonEvent = Readonly<{
+type ComparisonEvent = Readonly<{
   kind: 'Move' | 'Answer'
   key: string
   label: string
@@ -114,7 +119,7 @@ export type ComparisonExample = Readonly<{
   after?: Execution | undefined
 }>
 
-export type FindingKind =
+type FindingKind =
   | 'content'
   | 'action-added'
   | 'action-removed'
@@ -136,7 +141,7 @@ export type ComparisonFinding = Readonly<{
   shortest: ComparisonExample
 }>
 
-export type PropertyFailure = Readonly<{
+type PropertyFailure = Readonly<{
   propertyId: string
   property: string
   side: ComparisonSide
@@ -144,7 +149,7 @@ export type PropertyFailure = Readonly<{
   example: ComparisonExample
 }>
 
-export type UnfinishedComparisonWork = Readonly<{
+type UnfinishedComparisonWork = Readonly<{
   kind: 'starts' | 'pair'
   pair: string
   depth: number
@@ -321,17 +326,28 @@ const messageLabel = (message: unknown): string =>
         ? 'absent'
         : formatValue(message)
 
-const commandsKeys = new WeakMap<ReadonlyArray<CommandDescription>, string>()
-
-const commandsKey = (commands: ReadonlyArray<CommandDescription>): string => {
-  const known = commandsKeys.get(commands)
-  if (known !== undefined) {
-    return known
+const memoizeWeak = <Key extends object, Value>(
+  compute: (key: Key) => Value,
+): ((key: Key) => Value) => {
+  const cache = new WeakMap<Key, Value>()
+  return key => {
+    const known = cache.get(key)
+    if (known !== undefined) {
+      return known
+    }
+    const value = compute(key)
+    cache.set(key, value)
+    return value
   }
-  const key = canonical(Array.map(commands, commandKey).sort())
-  commandsKeys.set(commands, key)
-  return key
 }
+
+const commandsKey = memoizeWeak((commands: ReadonlyArray<CommandDescription>) =>
+  canonical(Array.map(commands, commandKey).sort()),
+)
+
+const screenKey = memoizeWeak((screen: Observation['screen']) =>
+  canonical(screen),
+)
 
 const commandDifference = (
   before: ReadonlyArray<CommandDescription>,
@@ -375,7 +391,7 @@ const normalizedLimits = (
   transitions: limit(limits.transitions, 'Transition limit'),
   pairs: limit(limits.pairs ?? limits.states, 'Pair limit'),
   enumerationWork: limit(
-    limits.enumerationWork ?? 1_000_000,
+    limits.enumerationWork ?? DEFAULT_ENUMERATION_WORK,
     'Enumeration work limit',
   ),
 })
@@ -499,10 +515,7 @@ export const createComparison = <
         interactions:
           environment.inputs === undefined
             ? {}
-            : Record.fromIterableWith(
-                inspection.interactions,
-                ({ key, message }) => [key, message],
-              ),
+            : interactionsRecord(inspection.interactions),
         evidence: {
           id,
           input,
@@ -516,13 +529,8 @@ export const createComparison = <
     const start = (input: Input, context: ReadonlyArray<Decision>) => {
       identity.of(input, `${program.name}.input`)
       const started = program.start(input)
-      return prepare(
-        started.model,
-        started.commands ?? [],
-        input,
-        context,
-        started.commands ?? [],
-      )
+      const commands = started.commands ?? []
+      return prepare(started.model, commands, input, context, commands)
     }
     const event = (
       node: Node<Model, Message, Input>,
@@ -534,7 +542,7 @@ export const createComparison = <
       }
       const message = encodeMessage(transition.message)
       if (transition.kind === 'Move') {
-        const key = canonical(['Move', message])
+        const key = moveKey(message)
         return {
           transition,
           evidence: {
@@ -550,21 +558,14 @@ export const createComparison = <
         }
       }
       const { index, command } = transition.request
-      if (
-        !Number.isInteger(index) ||
-        index < 0 ||
-        node.pending[index] !== command
-      ) {
+      if (!isPendingRequest(node.pending, transition.request)) {
         throw new Error(
           `${program.name}: answer must select a pending Command from this state.`,
         )
       }
       const selectedKey = commandKey(command)
-      const occurrence = Array.filter(
-        node.pending.slice(0, index),
-        pending => commandKey(pending) === selectedKey,
-      ).length
-      const description = { name: command.name, args: command.args ?? {} }
+      const occurrence = occurrenceOf(node.pending, transition.request)
+      const description = describeCommand(command)
       return {
         transition,
         evidence: {
@@ -583,15 +584,13 @@ export const createComparison = <
     ) => {
       const transition = selected.transition
       const updated = program.update(node.model, transition.message)
+      const commands = updated.commands ?? []
       return prepare(
         updated.model,
-        Array.appendAll(
-          remaining(node.pending, transition),
-          updated.commands ?? [],
-        ),
+        Array.appendAll(remaining(node.pending, transition), commands),
         node.input,
         node.context,
-        updated.commands ?? [],
+        commands,
       )
     }
     const next = (
@@ -747,19 +746,21 @@ export const createComparison = <
     if (before === undefined || after === undefined) {
       return
     }
-    const key = canonical([before.screen, after.screen])
+    // NOTE: This is canonical([before.screen, after.screen]) from cached parts.
+    const key = `[${screenKey(before.screen)},${screenKey(after.screen)}]`
     const deltas = screenDeltas.get(key) ?? changes(before.screen, after.screen)
     screenDeltas.set(key, deltas)
     Array.forEach(deltas, change => {
-      const title =
+      const isText =
         typeof change.before === 'string' && typeof change.after === 'string'
-          ? `Content changed: ${JSON.stringify(change.before)} → ${JSON.stringify(change.after)}`
-          : 'Rendered content changed'
+      const title = isText
+        ? `Content changed: ${JSON.stringify(change.before)} → ${JSON.stringify(change.after)}`
+        : 'Rendered content changed'
       record(
         change,
         'content',
         title,
-        typeof change.before === 'string' && typeof change.after === 'string'
+        isText
           ? 'The rendered text changed.'
           : 'The rendered structure changed.',
         change.before,
@@ -873,23 +874,20 @@ export const createComparison = <
       beforePassed: boolean | undefined,
       afterPassed: boolean | undefined,
     ) => {
-      if (beforePassed === false) {
+      const fail = (side: ComparisonSide) => {
         failures.push({
           propertyId: property.id,
           property: property.name,
-          side: 'before',
+          side,
           kind,
           example: evidence,
         })
       }
+      if (beforePassed === false) {
+        fail('before')
+      }
       if (afterPassed === false) {
-        failures.push({
-          propertyId: property.id,
-          property: property.name,
-          side: 'after',
-          kind,
-          example: evidence,
-        })
+        fail('after')
       }
       if (
         beforePassed !== afterPassed &&
@@ -1014,14 +1012,20 @@ export const createComparison = <
     queue.push(pair)
     return pair
   }
+  const withinWork = (): boolean => {
+    if (transitions() >= work.limits.transitions) {
+      stopped.status = 'transition-limit'
+      return false
+    }
+    if (work.enumerationWork >= work.limits.enumerationWork) {
+      stopped.status = 'enumeration-limit'
+      return false
+    }
+    return true
+  }
   const initialize = (): boolean => {
     if (startBuffer.value === undefined) {
-      if (transitions() >= work.limits.transitions) {
-        stopped.status = 'transition-limit'
-        return false
-      }
-      if (work.enumerationWork >= work.limits.enumerationWork) {
-        stopped.status = 'enumeration-limit'
+      if (!withinWork()) {
         return false
       }
       const step = starts.next()
@@ -1220,12 +1224,7 @@ export const createComparison = <
       cursor.iterator = enumerate(next)
       cursor.status = 'partial'
     }
-    if (transitions() >= work.limits.transitions) {
-      stopped.status = 'transition-limit'
-      return false
-    }
-    if (work.enumerationWork >= work.limits.enumerationWork) {
-      stopped.status = 'enumeration-limit'
+    if (!withinWork()) {
       return false
     }
     const result = cursor.iterator?.next()

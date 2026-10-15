@@ -2,7 +2,7 @@ import { Array, Option } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 import * as Scene from 'foldkit/scene'
 
-import { canonical } from './canonical'
+import { moveKey } from './canonical'
 
 export type InputDomain = Readonly<{
   label: string
@@ -76,7 +76,7 @@ export const inspect = <Model, Message>(
     }
     Array.forEach(messages, message => {
       try {
-        const key = canonical(['Move', encodeMessage(message)])
+        const key = moveKey(encodeMessage(message))
         interactions.push({ key, label, message })
       } catch (cause) {
         throw new Error(

@@ -3,7 +3,7 @@ export type TableMessage = Readonly<{
   target: number
   issued: ReadonlyArray<number>
 }>
-export type TableEdge = Readonly<{
+type TableEdge = Readonly<{
   label: string
   message: TableMessage
   request?: number
@@ -15,12 +15,12 @@ export type TransitionTable = Readonly<{
   edges: ReadonlyArray<ReadonlyArray<TableEdge>>
   unsafe: number
 }>
-export type ReferenceState = Readonly<{
+type ReferenceState = Readonly<{
   input: number
   model: number
   pending: ReadonlyArray<number>
 }>
-export type ReferenceEdge = Readonly<{
+type ReferenceEdge = Readonly<{
   from: string
   to: string
   label: string
@@ -38,7 +38,7 @@ export type ReferenceGraph = Readonly<{
 export const referenceKey = (state: ReferenceState): string =>
   JSON.stringify([state.input, state.model, state.pending])
 
-export const referenceEvents = (
+const referenceEvents = (
   table: TransitionTable,
   state: ReferenceState,
 ): ReadonlyArray<TableEdge> =>
@@ -46,10 +46,7 @@ export const referenceEvents = (
     edge => edge.request === undefined || edge.request < state.pending.length,
   )
 
-export const referenceEvent = (
-  state: ReferenceState,
-  edge: TableEdge,
-): string => {
+const referenceEvent = (state: ReferenceState, edge: TableEdge): string => {
   if (edge.request === undefined) {
     return JSON.stringify(['move', edge.message])
   }
@@ -131,7 +128,7 @@ export const referenceExplore = (
   }
 }
 
-export type ReferencePair = Readonly<{
+type ReferencePair = Readonly<{
   context: number
   before: ReferenceState
   after: ReferenceState
@@ -143,11 +140,11 @@ export type ReferencePairEdge = Readonly<{
   before?: string
   after?: string
 }>
-export type ReferenceComparison = Readonly<{
+type ReferenceComparison = Readonly<{
   pairs: ReadonlyArray<string>
   edges: ReadonlyArray<ReferencePairEdge>
 }>
-export const referencePairKey = (pair: ReferencePair): string =>
+const referencePairKey = (pair: ReferencePair): string =>
   JSON.stringify([
     pair.context,
     referenceKey(pair.before),
