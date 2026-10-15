@@ -34,6 +34,7 @@ import {
   describeCommand,
   describeCommands,
   freezeCommands,
+  interactionsRecord,
   observationOf,
 } from './observation'
 import {
@@ -45,7 +46,7 @@ import {
 
 // PROGRAM
 
-export type State<Model, Message> = Readonly<{
+type State<Model, Message> = Readonly<{
   model: Model
   pending: Update.Commands<Message>
 }>
@@ -78,7 +79,7 @@ type RequestCommand = Readonly<{
   args?: Readonly<Record<string, unknown>>
 }>
 
-export type Request<C extends RequestCommand = RequestCommand> = Readonly<{
+type Request<C extends RequestCommand = RequestCommand> = Readonly<{
   index: number
   command: C
 }>
@@ -226,36 +227,33 @@ export const transitionEvidence = <Message>(
 export const Search = Schema.Literals(['breadth', 'depth', 'random'])
 export type Search = typeof Search.Type
 
-export type Limits = Readonly<{
+type Limits = Readonly<{
   states?: number
   transitions?: number
   enumerationWork?: number
 }>
-export type ExplorationLimits = Readonly<{
-  states: number
-  transitions: number
-  enumerationWork: number
-}>
-export type Options<Model, Message> = Readonly<{
+type ExplorationLimits = Required<Limits>
+export const DEFAULT_ENUMERATION_WORK = 1_000_000
+type Options<Model, Message> = Readonly<{
   properties?: ReadonlyArray<Property<Model, Message>>
   limits?: Limits
 }>
 
 // ADDRESS
 
-export const Hop = Schema.Struct({
+const Hop = Schema.Struct({
   kind: Schema.Literals(['Start', 'Move', 'Answer', 'Event']),
   decisions: Schema.Array(Decision),
   maybeMessage: Schema.Option(Schema.Unknown),
 })
-export type Hop = typeof Hop.Type
+type Hop = typeof Hop.Type
 
 export const Address = Schema.Array(Hop)
 export type Address = typeof Address.Type
 
 // ATLAS
 
-export const StepSnapshot = Schema.Struct({
+const StepSnapshot = Schema.Struct({
   ...Hop.fields,
   label: Schema.String,
   to: Schema.String,
@@ -291,7 +289,7 @@ export const ReachStatus = Schema.Literals([
 ])
 export type ReachStatus = typeof ReachStatus.Type
 
-export type Reach = Readonly<{
+type Reach = Readonly<{
   states: ReadonlyArray<string>
   status: ReachStatus
   counters: Readonly<{
@@ -308,7 +306,7 @@ export type Reach = Readonly<{
 }>
 
 export type PendingCommand = Readonly<{ name: string; args: string }>
-export type FixtureOptions = Readonly<{
+type FixtureOptions = Readonly<{
   name: string
   options: ReadonlyArray<string>
 }>
@@ -327,14 +325,14 @@ export const ReachSnapshot = Schema.Struct({
     transitions: Schema.Number,
   }),
 })
-export const Violation = Schema.Struct({
+const Violation = Schema.Struct({
   propertyId: Schema.String,
   property: Schema.String,
   kind: Schema.Literals(['state', 'transition']),
   trace: Schema.Array(StepSnapshot),
   state: Schema.String,
 })
-export type Violation = typeof Violation.Type
+type Violation = typeof Violation.Type
 const EvaluationCounts = Schema.Struct({
   considered: Schema.Number,
   applicable: Schema.Number,
@@ -424,7 +422,7 @@ export const CheckReport = Schema.Struct({
   ),
 })
 export type CheckReport = typeof CheckReport.Type
-export type Group = Readonly<{ home: string; states: ReadonlyArray<string> }>
+type Group = Readonly<{ home: string; states: ReadonlyArray<string> }>
 
 export type Atlas = Readonly<{
   name: string
@@ -566,7 +564,7 @@ const tagOf = (message: unknown): string =>
     ? message._tag
     : 'Message'
 
-const WALKS = 32
+export const WALKS = 32
 
 // NOTE: mulberry32 gives each walk a repeatable seed.
 const random = (seed: number) => {
@@ -609,7 +607,7 @@ export const make = <Model, Message, Input = void>(
   const limits = limitsOf(options.limits ?? {}, {
     states: 5_000,
     transitions: 50_000,
-    enumerationWork: 1_000_000,
+    enumerationWork: DEFAULT_ENUMERATION_WORK,
   })
   const properties = registerProperties(options.properties ?? [])
   const identity = makeIdentity()
@@ -696,10 +694,7 @@ export const make = <Model, Message, Input = void>(
     interactions:
       environment.inputs === undefined
         ? {}
-        : Record.fromIterableWith(
-            inspection(node).interactions,
-            ({ key, message }) => [key, message],
-          ),
+        : interactionsRecord(inspection(node).interactions),
   })
 
   const learn = (decisions: ReadonlyArray<Decision>) =>
@@ -814,19 +809,17 @@ export const make = <Model, Message, Input = void>(
     transition: Transition<Message>,
   ) => {
     const updated = program.update(node.model, transition.message)
+    const issued = updated.commands ?? []
     return {
       maybeFrom: Option.some(node),
       input: node.input,
       model: updated.model,
-      pending: Array.appendAll(
-        remaining(node.pending, transition),
-        updated.commands ?? [],
-      ),
+      pending: Array.appendAll(remaining(node.pending, transition), issued),
       maybeMessageValue: Option.some(transition.message),
       evidence: transitionEvidence(
         node.pending,
         transition,
-        freezeIssued(updated.commands ?? []),
+        freezeIssued(issued),
       ),
     }
   }
@@ -905,7 +898,7 @@ export const make = <Model, Message, Input = void>(
   const pullSteps = function* <Value>(
     current: Source<Value>,
     index: number,
-    charge: (work: number) => boolean = () => true,
+    charge: (work: number) => boolean,
   ): Generator<void, Read<Value>> {
     while (true) {
       const known = current.values[index]
@@ -952,7 +945,9 @@ export const make = <Model, Message, Input = void>(
     }
   }
 
-  const knownStep = <Value>(outcome: Outcome<Value>): Option.Option<Step> =>
+  const knownStep = (
+    outcome: Outcome<Transition<Message>>,
+  ): Option.Option<Step> =>
     preparedArrivals.get(outcome)?.maybeStep ?? Option.none()
 
   const knownSuccessors = (id: string): ReadonlyArray<Step> => {
@@ -1341,8 +1336,6 @@ export const make = <Model, Message, Input = void>(
         ) {
           expanded.set(id, distances.get(id) ?? 0)
           frontier.delete(id)
-        } else {
-          frontier.add(id)
         }
       })
       if (sampledStarts.size < startOutcomes.length) {
@@ -1691,12 +1684,11 @@ export const make = <Model, Message, Input = void>(
   ): EvidenceArtifact =>
     finishReplay(replayEvidenceSteps(artifact, identity, options))
 
-  const atlasLimits = limits
   const checkSteps = function* (
     depth: number,
-    limits?: Limits,
+    override?: Limits,
   ): Generator<void, CheckReport> {
-    const result = yield* runSteps(depth, 'breadth', limits, true)
+    const result = yield* runSteps(depth, 'breadth', override, true)
     const failures = new Map<string, Violation>()
     const summaries = Array.map(properties, property => ({
       property,
@@ -1825,7 +1817,7 @@ export const make = <Model, Message, Input = void>(
       coverage: {
         depth,
         search: 'breadth',
-        limits: limitsOf(limits ?? {}, atlasLimits),
+        limits: limitsOf(override ?? {}, limits),
         reached: result.reach,
         starts: result.starts,
         edges,
@@ -1910,28 +1902,31 @@ export const make = <Model, Message, Input = void>(
 
   const describeReach = (depth: number): string => {
     const { reach: reached, edges } = run(depth, 'breadth')
-    const stateView = (id: string) => [
-      '',
-      `${id}  ${Array.join(
-        Array.map(nodeOf(id).trace, step => step.label),
-        ' › ',
-      )}`,
-      `    ${formatValue(encodeModel(nodeOf(id).model))}`,
-      ...Array.map(
-        nodeOf(id).pending,
-        command =>
-          `    pending ${command.name} ${formatValue(command.args ?? {})}`,
-      ),
-      ...Array.match(edges.get(id) ?? [], {
-        onEmpty: () => [],
-        onNonEmpty: steps => [
-          `    ${Array.join(
-            Array.map(steps, step => `${step.label} → ${step.to}`),
-            ' · ',
-          )}`,
-        ],
-      }),
-    ]
+    const stateView = (id: string) => {
+      const node = nodeOf(id)
+      return [
+        '',
+        `${id}  ${Array.join(
+          Array.map(node.trace, step => step.label),
+          ' › ',
+        )}`,
+        `    ${formatValue(encodeModel(node.model))}`,
+        ...Array.map(
+          node.pending,
+          command =>
+            `    pending ${command.name} ${formatValue(command.args ?? {})}`,
+        ),
+        ...Array.match(edges.get(id) ?? [], {
+          onEmpty: () => [],
+          onNonEmpty: steps => [
+            `    ${Array.join(
+              Array.map(steps, step => `${step.label} → ${step.to}`),
+              ' · ',
+            )}`,
+          ],
+        }),
+      ]
+    }
     return Array.join(
       [
         `# ${program.name} · depth ${depth} · ${reached.states.length} states · ${reached.status}`,

@@ -4,7 +4,7 @@ import { dataPath, dataShape, unsupportedData } from './execution-data'
 
 // IDENTITY
 
-export type Identity = Readonly<{
+type Identity = Readonly<{
   of: (value: unknown, path?: string) => unknown
   size: () => number
   clear: () => void

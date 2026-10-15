@@ -37,7 +37,7 @@ export const Release = Schema.Struct({
 })
 export type Release = typeof Release.Type
 
-export const ReleaseData = AsyncData.Schema(Release, Schema.String)
+const ReleaseData = AsyncData.Schema(Release, Schema.String)
 
 export const Submission = defineTaggedUnion({
   Reviewing: {},
@@ -323,8 +323,9 @@ const confirmationView = (
   release: Release,
   confirmation: string,
   h: HtmlBuilder<Message>,
-): Html =>
-  h.form(
+): Html => {
+  const environment = environmentOf(release)
+  return h.form(
     [
       h.Class(
         'flex flex-col gap-3 rounded-xl bg-slate-50 p-3 ring-1 ring-inset ring-slate-200/70',
@@ -335,12 +336,12 @@ const confirmationView = (
       h.p(
         [h.Class('text-[13px] leading-snug text-slate-700')],
         [
-          environmentOf(release) === 'production'
+          environment === 'production'
             ? `This changes the live ${release.service} service. Type production to confirm.`
             : 'Deploy this commit to staging?',
         ],
       ),
-      environmentOf(release) === 'production'
+      environment === 'production'
         ? h.input([
             h.AriaLabel('Confirm environment'),
             h.Placeholder('production'),
@@ -368,12 +369,13 @@ const confirmationView = (
               h.Class(`${primaryButton} w-auto`),
               h.Disabled(!isConfirmed(release, confirmation)),
             ],
-            [`Deploy to ${environmentOf(release)}`],
+            [`Deploy to ${environment}`],
           ),
         ],
       ),
     ],
   )
+}
 
 const submissionView = (
   release: Release,

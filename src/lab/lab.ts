@@ -22,6 +22,7 @@ import {
   Search,
   type StateSnapshot,
   type Step,
+  WALKS,
 } from './atlas'
 import { canonical } from './canonical'
 import { formatValue } from './display'
@@ -127,6 +128,9 @@ const toReviewMessage = (message: Review.Message): Message => {
   const routed = Message.GotReviewMessage({ message })
   return immutable(routed)
 }
+
+const reviewCommands = (update: Update.Return<Review.Model, Review.Message>) =>
+  Command.mapMessages(update.commands, toReviewMessage) ?? []
 
 const stateOf = (model: Model, id: string): StateSnapshot =>
   Option.getOrThrow(
@@ -258,7 +262,11 @@ const searches: ReadonlyArray<readonly [Search, string, string]> = [
     'Breadth-first: every state one step away before the next',
   ],
   ['depth', 'DFS', 'Depth-first: follow each path to the depth limit'],
-  ['random', 'Random', 'Random walks: 32 seeded walks up to the depth limit'],
+  [
+    'random',
+    'Random',
+    `Random walks: ${WALKS} seeded walks up to the depth limit`,
+  ],
 ]
 
 const searchView = (model: Model, h: HtmlBuilder<Message>): Html =>
@@ -649,6 +657,10 @@ const inspectorView = (
   const depth = snapshot.depth
   const search = snapshot.search
   const current = stateOf(model, card.state)
+  const traceRows = (steps: ReadonlyArray<Step>) =>
+    Array.map(steps, step =>
+      stepRow(card.slot, step, step.to === card.state, h),
+    )
   const maybeCheck = snapshot.maybeCheck
   const reached = snapshot.reached
   const isComplete =
@@ -698,15 +710,7 @@ const inspectorView = (
           ),
         ],
       ),
-      inspectorSection(
-        'trace',
-        'How it got here',
-        '',
-        Array.map(trace, step =>
-          stepRow(card.slot, step, step.to === card.state, h),
-        ),
-        h,
-      ),
+      inspectorSection('trace', 'How it got here', '', traceRows(trace), h),
       inspectorSection(
         'pending',
         'Waiting on',
@@ -807,12 +811,7 @@ const inspectorView = (
               ...Array.map(check.violations, failure =>
                 h.section(
                   [],
-                  [
-                    h.h4([], [failure.property]),
-                    ...Array.map(failure.trace, step =>
-                      stepRow(card.slot, step, step.to === card.state, h),
-                    ),
-                  ],
+                  [h.h4([], [failure.property]), ...traceRows(failure.trace)],
                 ),
               ),
               h.p(
@@ -1143,10 +1142,7 @@ export const makeLab = (
     )
     return {
       model: started.model,
-      commands: [
-        ...(Command.mapMessages(stopped.commands, toReviewMessage) ?? []),
-        ...(started.commands ?? []),
-      ],
+      commands: [...reviewCommands(stopped), ...(started.commands ?? [])],
     }
   }
 
@@ -1178,10 +1174,7 @@ export const makeLab = (
               mode: () => mode,
               review: () => started.model,
             }),
-            commands: [
-              ...(stopped.commands ?? []),
-              ...(Command.mapMessages(started.commands, toReviewMessage) ?? []),
-            ],
+            commands: [...(stopped.commands ?? []), ...reviewCommands(started)],
           }
         }
         const stopped = review.cancel(model.review)
@@ -1194,10 +1187,7 @@ export const makeLab = (
         )
         return {
           model: started.model,
-          commands: [
-            ...(Command.mapMessages(stopped.commands, toReviewMessage) ?? []),
-            ...(started.commands ?? []),
-          ],
+          commands: [...reviewCommands(stopped), ...(started.commands ?? [])],
         }
       },
       GotReviewMessage: ({ message: reviewMessage }) =>

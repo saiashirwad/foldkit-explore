@@ -24,7 +24,6 @@ import type {
   ComparisonExample,
   ComparisonFinding,
   ComparisonSide,
-  ComparisonStep,
   ComparisonTrace,
   Execution,
 } from './compare'
@@ -443,7 +442,7 @@ const inspectorView = (
     model.step < 0
       ? example.trace.length - 1
       : Math.min(model.step, example.trace.length - 1)
-  const step: ComparisonStep | undefined = example.trace[index]
+  const step = example.trace[index]
   const examples = new Set(Array.map(finding.examples, item => item.id))
   const failures = comparison.propertyFailures.filter(failure =>
     examples.has(failure.example.id),
@@ -876,6 +875,9 @@ export const makeReview = (cases: ReadonlyArray<ComparisonCase>) => {
       }),
     ],
   })
+
+  // INIT
+
   const start = (
     model: Model,
     reset = false,
@@ -913,6 +915,22 @@ export const makeReview = (cases: ReadonlyArray<ComparisonCase>) => {
     const stopped = model.replay._tag === 'Running' ? cancel(model) : { model }
     return { ...stopped, model: change(resetSelection(stopped.model)) }
   }
+
+  const replayCommand = (
+    model: Model,
+    example: ComparisonExample,
+    chunks: number,
+  ) =>
+    ReplayComparison({
+      runId: model.runId,
+      scenario: model.scenario,
+      depth: model.depth,
+      example,
+      chunks,
+    })
+
+  // UPDATE
+
   const update = (model: Model, message: Message) =>
     Message.match<Update.Return<Model, Message>>(message, {
       SelectedComparison: ({ name }) =>
@@ -977,15 +995,7 @@ export const makeReview = (cases: ReadonlyArray<ComparisonCase>) => {
             })
             return {
               model: next,
-              commands: [
-                ReplayComparison({
-                  runId: next.runId,
-                  scenario: next.scenario,
-                  depth: next.depth,
-                  example: selection.example,
-                  chunks: 0,
-                }),
-              ],
+              commands: [replayCommand(next, selection.example, 0)],
             }
           },
         }),
@@ -1028,13 +1038,7 @@ export const makeReview = (cases: ReadonlyArray<ComparisonCase>) => {
                   : {
                       model: next,
                       commands: [
-                        ReplayComparison({
-                          runId,
-                          scenario: next.scenario,
-                          depth: next.depth,
-                          example: selection.example,
-                          chunks: replay.chunks,
-                        }),
+                        replayCommand(next, selection.example, replay.chunks),
                       ],
                     }
               },
@@ -1053,10 +1057,11 @@ export const makeReview = (cases: ReadonlyArray<ComparisonCase>) => {
       }),
     })
 
+  // VIEW
+
   const headerView = (
     model: Model,
     mode: Html,
-    maybeComparison: Option.Option<ComparisonSnapshot>,
     h: HtmlBuilder<Message>,
   ): Html =>
     h.header(
@@ -1085,7 +1090,7 @@ export const makeReview = (cases: ReadonlyArray<ComparisonCase>) => {
         h.div(
           [h.Class('lab-header-end')],
           [
-            Option.match(maybeComparison, {
+            Option.match(model.maybeSnapshot, {
               onNone: () =>
                 h.span(
                   [h.Class('lab-count'), h.Role('status')],
@@ -1121,7 +1126,7 @@ export const makeReview = (cases: ReadonlyArray<ComparisonCase>) => {
                     h.AriaLabel('More comparison steps'),
                     h.Disabled(
                       Option.exists(
-                        maybeComparison,
+                        model.maybeSnapshot,
                         comparison => comparison.status !== 'depth-limit',
                       ),
                     ),
@@ -1150,10 +1155,7 @@ export const makeReview = (cases: ReadonlyArray<ComparisonCase>) => {
     (model, inputs, h) =>
       Option.match(model.maybeSnapshot, {
         onNone: () =>
-          h.div(
-            [h.Class('lab')],
-            [headerView(model, inputs.mode(), Option.none(), h)],
-          ),
+          h.div([h.Class('lab')], [headerView(model, inputs.mode(), h)]),
         onSome: comparison => {
           const selection = selected(model, comparison)
           const scenario = scenarioOf(model)
@@ -1163,7 +1165,7 @@ export const makeReview = (cases: ReadonlyArray<ComparisonCase>) => {
           return h.div(
             [h.Class('lab')],
             [
-              headerView(model, inputs.mode(), Option.some(comparison), h),
+              headerView(model, inputs.mode(), h),
               h.div(
                 [h.Class('comparison-coverage'), h.Role('status')],
                 [

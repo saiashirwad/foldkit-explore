@@ -31,11 +31,26 @@ try {
     viewport: { width: 1280, height: 900 },
   })
   const page = state.page
+  const cancel = page.getByRole('button', { name: 'Cancel', exact: true })
+  const waitForCancelled = () =>
+    page.waitForFunction(
+      () =>
+        document.body.innerText.includes('Cancelled') &&
+        !document.body.innerText.includes('Running'),
+    )
+  const inspect = page.getByRole('button', { name: 'Inspect', exact: true })
+  const selectedState = page.getByLabel('Selected state', { exact: true })
+  const openFirstStateInspector = async () => {
+    await inspect.first().waitFor()
+    await inspect.first().click()
+    await selectedState.waitFor()
+  }
+  const comparison = page.getByLabel('Comparison', { exact: true })
   page.setDefaultTimeout(20_000)
   const exceptions = []
   page.on('pageerror', error => exceptions.push(error.message))
   await page.goto(`${origin}/tests/browser/analysis.html`)
-  await page.getByRole('button', { name: 'Cancel', exact: true }).waitFor()
+  await cancel.waitFor()
   await page.waitForFunction(() => document.body.innerText.includes('chunks'))
   await page.evaluate(() => {
     window.browserSmokeFrames = 0
@@ -45,34 +60,24 @@ try {
     }
     requestAnimationFrame(count)
   })
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
-  await page.waitForFunction(
-    () =>
-      document.body.innerText.includes('Cancelled') &&
-      !document.body.innerText.includes('Running'),
-  )
+  await cancel.click()
+  await waitForCancelled()
   await page.getByRole('button', { name: 'Reset', exact: true }).click()
-  await page.getByRole('button', { name: 'Cancel', exact: true }).waitFor()
+  await cancel.waitFor()
   await page.getByRole('button', { name: 'Fewer steps', exact: true }).click()
   await page.getByRole('button', { name: 'Compare', exact: true }).click()
-  await page.getByLabel('Comparison', { exact: true }).waitFor()
+  await comparison.waitFor()
   await page
     .getByRole('button', { name: 'More comparison steps', exact: true })
     .click()
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
-  await page.waitForFunction(
-    () =>
-      document.body.innerText.includes('Cancelled') &&
-      !document.body.innerText.includes('Running'),
-  )
+  await cancel.click()
+  await waitForCancelled()
   const frames = await page.evaluate(() => window.browserSmokeFrames)
   assert(
     frames > 0,
     'No browser animation frames while analysis and controls ran',
   )
-  await page
-    .getByLabel('Comparison', { exact: true })
-    .selectOption({ label: 'Browser changed heading' })
+  await comparison.selectOption({ label: 'Browser changed heading' })
   await page.waitForFunction(
     () =>
       document.body.innerText.includes('Content changed') &&
@@ -89,15 +94,7 @@ try {
   await page
     .getByLabel('Program', { exact: true })
     .selectOption({ label: 'Browser finite counter' })
-  await page
-    .getByRole('button', { name: 'Inspect', exact: true })
-    .first()
-    .waitFor()
-  await page
-    .getByRole('button', { name: 'Inspect', exact: true })
-    .first()
-    .click()
-  await page.getByLabel('Selected state', { exact: true }).waitFor()
+  await openFirstStateInspector()
   await page
     .getByRole('button', { name: 'Continue', exact: true })
     .first()
@@ -106,18 +103,10 @@ try {
     document.body.innerText.includes('Before heading'),
   )
   await page.goto(`${origin}/lab.html`)
-  await page
-    .getByRole('button', { name: 'Inspect', exact: true })
-    .first()
-    .waitFor()
-  await page
-    .getByRole('button', { name: 'Inspect', exact: true })
-    .first()
-    .click()
-  await page.getByLabel('Selected state', { exact: true }).waitFor()
+  await openFirstStateInspector()
   await page.getByRole('button', { name: 'Compare', exact: true }).click()
-  await page.getByLabel('Comparison', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await comparison.waitFor()
+  await cancel.click()
   await page.waitForFunction(() =>
     document.body.innerText.includes('Cancelled'),
   )

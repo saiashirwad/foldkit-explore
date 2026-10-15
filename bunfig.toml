@@ -1,0 +1,6 @@
+# The suite is Vitest's (`bun run test`). Bun's built-in runner discovers the same
+# `*.test.ts` files but provides neither Vitest's matchers (`toMatchFileSnapshot`)
+# nor its `happy-dom` environment and `setupFiles`, so a bare `bun test` reports
+# misleading results. Ignore every test path so that mistake fails loudly instead.
+[test]
+pathIgnorePatterns = ["src/**"]

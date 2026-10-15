@@ -53,7 +53,7 @@ function* next(state: NextState<Model, Message>): Choices<Transition<Message>> {
 export const longUsername =
   'averylongunbrokenusernameforcheckinghowaccountdetailswraponnarrowdisplays'
 
-export function* SignupStarts(): Choices<Plan> {
+function* SignupStarts(): Choices<Plan> {
   return yield* fixture('arrivedFrom', { home: 'Free', pricing: 'Pro' })
 }
 

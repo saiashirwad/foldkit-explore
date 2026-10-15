@@ -1,6 +1,6 @@
 import type { CheckReport } from './atlas'
 
-export type CheckDecision = Readonly<{
+type CheckDecision = Readonly<{
   status: 'passed' | 'counterexample' | 'incomplete' | 'not-exercised' | 'error'
   exitCode: 0 | 1 | 2 | 3 | 4
 }>

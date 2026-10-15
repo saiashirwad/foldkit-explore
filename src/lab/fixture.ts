@@ -4,7 +4,7 @@ import { ReplayDivergenceError } from './replay'
 
 // FIXTURE
 
-export type Fixture = Readonly<{
+type Fixture = Readonly<{
   name: string
   cases: Readonly<Record<string, unknown>>
 }>

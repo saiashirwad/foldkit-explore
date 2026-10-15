@@ -1,8 +1,8 @@
-import { Array } from 'effect'
+import { Array, Record } from 'effect'
 
 import { canonical } from './canonical'
 import { dataPath, dataShape } from './execution-data'
-import type { ActionDescription, Screen } from './interactions'
+import type { ActionDescription, Interaction, Screen } from './interactions'
 
 export type CommandDescription = Readonly<{
   name: string
@@ -44,6 +44,11 @@ export const describeCommand = (
 export const describeCommands = (
   pending: ReadonlyArray<DescribedCommand>,
 ): ReadonlyArray<CommandDescription> => Array.map(pending, describeCommand)
+
+export const interactionsRecord = <Message>(
+  interactions: ReadonlyArray<Interaction<Message>>,
+): Readonly<Record<string, Message>> =>
+  Record.fromIterableWith(interactions, ({ key, message }) => [key, message])
 
 export const observationOf = (
   inspected: Readonly<{

@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "format": "oxfmt",
+    "format": "oxfmt src",
     "test": "vitest run",
     "lint": "oxlint src scripts",
     "check:analysis": "bun scripts/check.mjs",

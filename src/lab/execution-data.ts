@@ -14,6 +14,11 @@ const nonePrototype = Object.getPrototypeOf(Option.none())
 export const dataPath = (path: string, key: string): string =>
   `${path}[${JSON.stringify(key)}]`
 
+// JSON would collapse signed zero into zero; the explicit token keeps the two
+// distinguishable in canonical keys and in evidence payloads.
+export const numberToken = (value: number): string =>
+  Object.is(value, -0) ? '-0' : String(value)
+
 export const unsupportedData = (
   purpose: Purpose,
   path: string,

@@ -882,11 +882,6 @@
     zoom: 0.8;
   }
 
-  .comparison-inspector .row-label {
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-
   .comparison-example {
     display: flex;
     align-items: center;

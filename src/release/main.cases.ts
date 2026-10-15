@@ -147,7 +147,7 @@ function* next(state: NextState<Model, Message>): Choices<Transition<Message>> {
   )
 }
 
-export function* ReleaseStarts(): Choices<void> {
+function* ReleaseStarts(): Choices<void> {
   return
 }
 

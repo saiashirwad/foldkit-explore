@@ -1,4 +1,4 @@
-export type ReplayLimits = Readonly<{
+type ReplayLimits = Readonly<{
   hops?: number
   work?: number
 }>
@@ -8,12 +8,12 @@ export type ReplayOptions = Readonly<{
   signal?: AbortSignal
 }>
 
-export const defaultReplayLimits = Object.freeze({
+const defaultReplayLimits = Object.freeze({
   hops: 1_000,
   work: 1_000_000,
 })
 
-export type ReplayDivergence =
+type ReplayDivergence =
   | 'address'
   | 'hop-kind'
   | 'fixture'
@@ -71,7 +71,7 @@ export function* boundedReplaySteps<Output>(
   hops: number,
   options: ReplayOptions = {},
 ): Generator<void, Output> {
-  const used = { work: 0 }
+  let work = 0
   try {
     const limits = {
       hops: allowance(options.limits?.hops ?? defaultReplayLimits.hops, 'hop'),
@@ -84,10 +84,10 @@ export function* boundedReplaySteps<Output>(
       if (options.signal?.aborted) {
         throw new ReplayCancelledError()
       }
-      if (used.work >= limits.work) {
+      if (work >= limits.work) {
         throw new ReplayLimitError('work', limits.work)
       }
-      used.work += 1
+      work += 1
       const step = iterator.next()
       if (step.done) {
         return step.value

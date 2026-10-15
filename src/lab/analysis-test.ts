@@ -2,8 +2,7 @@ import { Array, Effect } from 'effect'
 import type { Update } from 'foldkit'
 import * as Scene from 'foldkit/scene'
 
-import type { Message, Model } from './lab'
-import type { makeLab } from './lab'
+import type { Message, Model, makeLab } from './lab'
 
 type Application = ReturnType<typeof makeLab>
 

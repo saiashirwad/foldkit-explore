@@ -39,6 +39,8 @@ export const Message = defineMessageUnion({
 
 export type Message = typeof Message.Type
 
+// UPDATE
+
 export const update = (model: Model, message: Message) =>
   Message.match<Update.Return<Model, Message>>(message, {
     UpdatedZipCodeInput: ({ value }) => ({

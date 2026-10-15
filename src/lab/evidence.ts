@@ -5,9 +5,12 @@ import { canonical } from './canonical'
 import { EvidenceData, encodeEvidenceData } from './evidence-data'
 import { Decision } from './fixture'
 import { makeIdentity } from './identity'
-import type { Observation } from './observation'
-import { describeCommands } from './observation'
+import { type Observation, describeCommands } from './observation'
 import { ReplayDivergenceError } from './replay'
+
+const EVIDENCE_FORMAT = 'foldkit-explore/evidence'
+const EVIDENCE_VERSION = 1
+const EVIDENCE_DATA_ENCODING = 'foldkit-data/v1'
 
 export const ReplayIdentity = Schema.Struct({
   program: Schema.String,
@@ -24,14 +27,14 @@ export const EvidenceCommand = Schema.Struct({
 })
 export type EvidenceCommand = typeof EvidenceCommand.Type
 
-export const EvidenceExecution = Schema.Struct({
+const EvidenceExecution = Schema.Struct({
   input: EvidenceData,
   model: EvidenceData,
   encodedModel: EvidenceData,
   pending: Schema.Array(EvidenceCommand),
   observation: EvidenceData,
 })
-export type EvidenceExecution = typeof EvidenceExecution.Type
+type EvidenceExecution = typeof EvidenceExecution.Type
 
 const transitionFields = {
   decisions: Schema.Array(Decision),
@@ -60,9 +63,9 @@ export const EvidenceStep = defineTaggedUnion({
 export type EvidenceStep = typeof EvidenceStep.Type
 
 export const EvidenceArtifact = Schema.Struct({
-  format: Schema.Literal('foldkit-explore/evidence'),
-  version: Schema.Literal(1),
-  dataEncoding: Schema.Literal('foldkit-data/v1'),
+  format: Schema.Literal(EVIDENCE_FORMAT),
+  version: Schema.Literal(EVIDENCE_VERSION),
+  dataEncoding: Schema.Literal(EVIDENCE_DATA_ENCODING),
   identity: ReplayIdentity,
   steps: Schema.Array(EvidenceStep),
 })
@@ -116,9 +119,9 @@ export const evidenceArtifact = (
 ): EvidenceArtifact => {
   assertReplayIdentity(identity)
   const artifact: EvidenceArtifact = {
-    format: 'foldkit-explore/evidence',
-    version: 1,
-    dataEncoding: 'foldkit-data/v1',
+    format: EVIDENCE_FORMAT,
+    version: EVIDENCE_VERSION,
+    dataEncoding: EVIDENCE_DATA_ENCODING,
     identity: {
       program: identity.program,
       environment: identity.environment,

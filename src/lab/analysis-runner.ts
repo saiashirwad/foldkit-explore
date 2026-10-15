@@ -7,13 +7,13 @@ import { ReplayCancelledError } from './replay'
 
 export const CHUNK_SIZE = 128
 
-export type Session = Readonly<{ dispose: () => void }>
-export type RunRequest = Readonly<{
+type Session = Readonly<{ dispose: () => void }>
+type RunRequest = Readonly<{
   runId: number
   key: string
   reset: boolean
 }>
-export type RunResult<Value> = Readonly<{
+type RunResult<Value> = Readonly<{
   status: AnalysisStatus
   maybeValue: Option.Option<Value>
 }>
