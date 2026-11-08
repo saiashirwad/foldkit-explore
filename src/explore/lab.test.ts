@@ -28,14 +28,25 @@ test('shows the states reached at the chosen depth', () => {
   )
 })
 
-test('pruning a state removes it', () => {
+test('selecting a card shows its moves in the sidebar, and pruning drops it', () => {
   scene(
     lab,
     given(lab.init().model),
+    expect(role('complementary', { name: 'Selected state' })).toExist(),
+    click(role('button', { name: 'Select S2' })),
     expect(text('S2')).toExist(),
-    click(role('button', { name: 'Prune S2' })),
+    click(role('button', { name: 'Prune this state' })),
     expect(role('button', { name: 'Reset' })).toExist(),
     expect(text('Prune rule for your code')).toExist(),
+  )
+})
+
+test('picking a move in the sidebar sends the selected card there', () => {
+  scene(
+    lab,
+    given(lab.init().model),
+    click(role('button', { name: 'user · typedAda to S3' })),
+    expect(role('button', { name: 'Back to S1' })).toExist(),
   )
 })
 
