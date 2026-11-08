@@ -1,4 +1,4 @@
-import { Array, Option, Schema } from 'effect'
+import { Array, Option, Record, Schema } from 'effect'
 import type { Update } from 'foldkit'
 import {
   type Document,
@@ -39,6 +39,8 @@ type Click = typeof Click.Type
 
 type Result = Readonly<{
   cards: ReadonlyArray<Card>
+  // Every state, including hidden ones, for a card that moves onto it.
+  byKey: ReadonlyMap<string, Card>
   total: number
   isComplete: boolean
 }>
@@ -50,7 +52,10 @@ type Card = Readonly<{
   isDeadEnd: boolean
   via: string
   commands: string
-  render: (h: HtmlBuilder<Message>) => Html
+  // Where one move from here leads.
+  moves: ReadonlyArray<Readonly<{ label: string; to: string }>>
+  // `slot` is the card's home state, so a card keeps its place as it moves.
+  render: (slot: number, h: HtmlBuilder<Message>) => Html
 }>
 
 const STATES = 200
@@ -115,34 +120,42 @@ export const makeCase = <ProgramModel, ProgramMessage, Input>(
         limits,
       )
       const ends = new Set(deadEnds(graph, limits.depth).map(({ id }) => id))
+      const all = Array.map(graph.nodes, (node): Card => ({
+        key: node.key,
+        id: node.id,
+        depth: node.depth,
+        isDeadEnd: ends.has(node.id),
+        via: node.via.join(' · '),
+        commands: Array.map(node.pending, command => command.name).join(', '),
+        moves: Array.dedupeWith(
+          Array.flatMap(graph.edges, edge => {
+            const target = graph.nodes[edge.to]
+            return edge.from === node.id &&
+              edge.to !== node.id &&
+              target !== undefined
+              ? [{ label: edge.via.join(' · '), to: target.key }]
+              : []
+          }),
+          (x, y) => x.label === y.label && x.to === y.to,
+        ),
+        render: (slot, h) =>
+          h.submodel({
+            slotId: `state-${slot}`,
+            model: node.model,
+            view,
+            toParentMessage: message =>
+              Message.InteractedWithState({
+                key: node.key,
+                depth: node.depth,
+                message,
+              }),
+          }),
+      }))
       return {
         total: graph.nodes.length,
         isComplete: graph.isComplete,
-        cards: Array.map(
-          Array.filter(graph.nodes, node => node.shown),
-          node => ({
-            key: node.key,
-            id: node.id,
-            depth: node.depth,
-            isDeadEnd: ends.has(node.id),
-            via: node.via.join(' · '),
-            commands: Array.map(node.pending, command => command.name).join(
-              ', ',
-            ),
-            render: (h: HtmlBuilder<Message>) =>
-              h.submodel({
-                slotId: `state-${node.id}`,
-                model: node.model,
-                view,
-                toParentMessage: message =>
-                  Message.InteractedWithState({
-                    key: node.key,
-                    depth: node.depth,
-                    message,
-                  }),
-              }),
-          }),
-        ),
+        cards: Array.filter(all, card => graph.nodes[card.id]?.shown === true),
+        byKey: new Map(Array.map(all, card => [card.key, card])),
       }
     },
   }
@@ -175,10 +188,15 @@ export const Model = Schema.Struct({
   depth: Schema.Number,
   pruned: Schema.Array(Schema.String),
   clicks: Schema.Array(Click),
+  // Where each card has been moved to, by home key and target key.
+  moved: Schema.Record(Schema.String, Schema.String),
 })
 export type Model = typeof Model.Type
 
 const MAX_DEPTH = 8
+const COMPARE_DEPTH = 7
+// Comparing needs depth to reach a difference, so it explores more states.
+const COMPARE_STATES = 3_000
 
 // MESSAGE
 
@@ -189,6 +207,8 @@ export const Message = defineMessageUnion({
   ClickedShallower: {},
   ClickedDeeper: {},
   ClickedPrune: { key: Schema.String },
+  ClickedMove: { slot: Schema.String, to: Schema.String },
+  ClickedHome: { slot: Schema.String },
   ClickedReset: {},
   InteractedWithState: {
     key: Schema.String,
@@ -203,8 +223,14 @@ export type Message = typeof Message.Type
 const lazy = createLazy()
 const lazyCompare = createLazy()
 
-const cardView = (card: Card, h: HtmlBuilder<Message>): Html =>
-  h.article(
+const cardView = (
+  home: Card,
+  card: Card,
+  byKey: ReadonlyMap<string, Card>,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.keyed('article')(
+    `${home.id}`,
     [h.Class('state')],
     [
       h.div(
@@ -215,6 +241,16 @@ const cardView = (card: Card, h: HtmlBuilder<Message>): Html =>
           card.isDeadEnd
             ? h.span([h.Class('state-end')], ['dead end'])
             : h.empty,
+          card === home
+            ? h.empty
+            : h.button(
+                [
+                  h.Class('lab-quiet'),
+                  h.AriaLabel(`Move S${home.id + 1} back home`),
+                  h.OnClick(Message.ClickedHome({ slot: home.key })),
+                ],
+                [`↺ S${home.id + 1}`],
+              ),
           h.button(
             [
               h.Class('lab-quiet'),
@@ -225,10 +261,25 @@ const cardView = (card: Card, h: HtmlBuilder<Message>): Html =>
           ),
         ],
       ),
-      h.div([h.Class('state-preview')], [card.render(h)]),
+      h.div([h.Class('state-preview')], [card.render(home.id, h)]),
       card.commands === ''
         ? h.empty
         : h.p([h.Class('state-commands')], [`pending: ${card.commands}`]),
+      h.div(
+        [h.Class('state-moves')],
+        Array.map(card.moves, move =>
+          h.button(
+            [
+              h.Class('state-move'),
+              h.AriaLabel(
+                `S${home.id + 1}: ${move.label} to S${(byKey.get(move.to)?.id ?? 0) + 1}`,
+              ),
+              h.OnClick(Message.ClickedMove({ slot: home.key, to: move.to })),
+            ],
+            [`${move.label} → S${(byKey.get(move.to)?.id ?? 0) + 1}`],
+          ),
+        ),
+      ),
     ],
   )
 
@@ -326,6 +377,7 @@ const gridView = (
   depth: number,
   pruned: string,
   clicks: ReadonlyArray<Click>,
+  moved: Readonly<Record<string, string>>,
   h: HtmlBuilder<Message>,
 ): Html => {
   const keys: ReadonlyArray<string> = JSON.parse(pruned)
@@ -349,7 +401,7 @@ const gridView = (
           ),
           depthView(depth, h),
           h.span([h.Class('lab-count')], [countView(result, keys.length)]),
-          keys.length > 0 || clicks.length > 0
+          keys.length > 0 || clicks.length > 0 || !Record.isEmptyRecord(moved)
             ? h.button(
                 [h.Class('lab-quiet'), h.OnClick(Message.ClickedReset())],
                 ['Reset'],
@@ -368,7 +420,19 @@ const gridView = (
         : h.empty,
       h.section(
         [h.Class('lab-grid'), h.AriaLabel('States')],
-        Array.map(result.cards, card => cardView(card, h)),
+        Array.map(result.cards, home =>
+          cardView(
+            home,
+            Option.getOrElse(
+              Option.flatMap(Record.get(moved, home.key), to =>
+                Option.fromNullishOr(result.byKey.get(to)),
+              ),
+              () => home,
+            ),
+            result.byKey,
+            h,
+          ),
+        ),
       ),
     ],
   )
@@ -408,7 +472,10 @@ const compareView = (
   depth: number,
   h: HtmlBuilder<Message>,
 ): Html => {
-  const result = nameOf(comparisons, name).run({ depth, states: STATES })
+  const result = nameOf(comparisons, name).run({
+    depth,
+    states: COMPARE_STATES,
+  })
   return h.div(
     [],
     [
@@ -432,6 +499,16 @@ const compareView = (
           ),
         ],
       ),
+      result.findings.length === 0
+        ? h.p(
+            [h.Class('lab-empty')],
+            [
+              result.isComplete
+                ? 'No differences. The two versions behave the same in everything explored.'
+                : `No differences found yet. The search was cut off at depth ${depth} or ${COMPARE_STATES} states, so a difference may be further away.`,
+            ],
+          )
+        : h.empty,
       h.ul(
         [h.Class('findings'), h.AriaLabel('Differences')],
         Array.map(result.findings, finding => findingView(finding, h)),
@@ -459,13 +536,19 @@ export const makeLab = (
       depth: 3,
       pruned: [],
       clicks: [],
+      moved: {},
     },
   })
 
   const update = (model: Model, message: Message) =>
     Message.match<Update.Return<Model, Message>>(message, {
       SelectedMode: ({ mode }) => ({
-        model: modifyFields(model, { mode: () => mode }),
+        model: modifyFields(model, {
+          mode: () => mode,
+          // Most differences take several steps to reach.
+          depth: depth =>
+            mode === 'Compare' ? Math.max(depth, COMPARE_DEPTH) : depth,
+        }),
       }),
       SelectedComparison: ({ comparison }) => ({
         model: modifyFields(model, { comparison: () => comparison }),
@@ -475,6 +558,7 @@ export const makeLab = (
           program: () => program,
           pruned: () => [],
           clicks: () => [],
+          moved: () => ({}),
         }),
       }),
       ClickedShallower: () => ({
@@ -490,8 +574,22 @@ export const makeLab = (
           pruned: pruned => Array.append(pruned, key),
         }),
       }),
+      ClickedMove: ({ slot, to }) => ({
+        model: modifyFields(model, {
+          moved: moved => ({ ...moved, [slot]: to }),
+        }),
+      }),
+      ClickedHome: ({ slot }) => ({
+        model: modifyFields(model, {
+          moved: moved => Record.remove(moved, slot),
+        }),
+      }),
       ClickedReset: () => ({
-        model: modifyFields(model, { pruned: () => [], clicks: () => [] }),
+        model: modifyFields(model, {
+          pruned: () => [],
+          clicks: () => [],
+          moved: () => ({}),
+        }),
       }),
       InteractedWithState: ({ key, depth, message }) => ({
         model: modifyFields(model, {
@@ -510,6 +608,7 @@ export const makeLab = (
       model.depth,
       JSON.stringify(model.pruned),
       model.clicks,
+      model.moved,
       h,
     ])
 

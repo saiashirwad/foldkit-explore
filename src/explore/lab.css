@@ -98,6 +98,11 @@
     color: var(--ink);
   }
 
+  .lab-empty {
+    padding: 24px;
+    color: var(--muted);
+  }
+
   .findings {
     display: flex;
     flex-direction: column;
@@ -164,6 +169,27 @@
 
   .state-end {
     color: #b45309;
+  }
+
+  .state-moves {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .state-move {
+    padding: 2px 7px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: white;
+    font: 11px var(--mono);
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  .state-move:hover {
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
   .state-commands {
