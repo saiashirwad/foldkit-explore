@@ -46,14 +46,12 @@ See `README.md`. `src/explore/` is the library: `fixture` and `outcomes`, `explo
 
 ### Known issues
 
-- Previews are inert: clicking inside a state does nothing.
+- A click in a preview is a `send`, so it never answers a pending Command.
 - The Weather view hard-codes `id="location"`, so several Weather cards trigger Foldkit's duplicate-id warning.
 - Command definitions don't expose their declared `messages` or argument schemas, so an answer is not checked against its Command.
 - Interrupts and subscriptions are not modeled.
 
 ### Directions
 
-- Add Foldkit's Block API once it is stable. The core needs only `start`, `update` and `view`, so an adapter should be thin.
-- Export a UI prune as a code rule.
-- Temporal properties: dead ends, stuck spinners.
-- Version comparison under one environment (removed in the simplification; see git history).
+- Add Foldkit's Block API once it can run a Block's `init`, `update` and `view` through a public accessor. The core needs only those three, so an adapter should be thin. Today only `Story` and `Scene` run Blocks, as Effects.
+- The Compare tab has no live clicks and no prune.
