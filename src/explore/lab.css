@@ -53,6 +53,11 @@
     color: var(--muted);
   }
 
+  .lab-depth button[aria-pressed='true'] {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
   .lab-count {
     font: 11px var(--mono);
     color: var(--muted);
@@ -91,6 +96,52 @@
     border-radius: 8px;
     background: white;
     color: var(--ink);
+  }
+
+  .findings {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0;
+    padding: 20px 24px;
+    list-style: none;
+  }
+
+  .finding {
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: white;
+  }
+
+  .finding-head {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    font: 11px var(--mono);
+    color: var(--muted);
+  }
+
+  .finding-head strong {
+    font:
+      600 13px system-ui,
+      sans-serif;
+    color: var(--ink);
+  }
+
+  .finding-before,
+  .finding-after {
+    margin: 6px 0 0;
+    padding-left: 8px;
+    border-left: 3px solid;
+  }
+
+  .finding-before {
+    border-color: #e11d48;
+  }
+
+  .finding-after {
+    border-color: #16a34a;
   }
 
   .state {
