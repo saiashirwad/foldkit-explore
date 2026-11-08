@@ -1,4 +1,4 @@
-import { Array, Predicate, type Schema } from 'effect'
+import { Array, type Schema } from 'effect'
 import type { Update } from 'foldkit'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
@@ -96,8 +96,8 @@ export type Edge = Readonly<{
   from: number
   to: number
   via: ReadonlyArray<string>
-  // The `_tag` of the Message this move sent, when it has one.
-  tag: string | undefined
+  // The move that was made. Starts have no edge.
+  move: Move<unknown>
 }>
 
 export type Limits = Readonly<{
@@ -124,13 +124,6 @@ export const defaultKey = <Model, Message, Input>(
   state.model,
   Array.map(state.pending, command => [command.name, command.args ?? {}]),
 ]
-
-const tagOf = (message: unknown): string | undefined => {
-  const tag = Predicate.hasProperty(message, '_tag')
-    ? Reflect.get(message, '_tag')
-    : undefined
-  return typeof tag === 'string' ? tag : undefined
-}
 
 const issued = <Message>(
   result: Update.Return<unknown, Message>,
@@ -182,7 +175,7 @@ export const explore = <Model, Message, Input>(
     next: State<Model, Message, Input>,
     from: Node<Model, Message, Input> | undefined,
     via: ReadonlyArray<string>,
-    tag?: string,
+    move?: Move<Message>,
   ): void => {
     if (environment.prune?.(next)) {
       return
@@ -212,8 +205,8 @@ export const explore = <Model, Message, Input>(
         status.found = id
       }
     }
-    if (from !== undefined) {
-      edges.push({ from: from.id, to: id, via, tag })
+    if (from !== undefined && move !== undefined) {
+      edges.push({ from: from.id, to: id, via, move })
     }
   }
 
@@ -244,7 +237,7 @@ export const explore = <Model, Message, Input>(
       if (status.found !== undefined) {
         break
       }
-      reach(apply(program, node, move), node, path, tagOf(move.message))
+      reach(apply(program, node, move), node, path, move)
     }
   }
   return {
