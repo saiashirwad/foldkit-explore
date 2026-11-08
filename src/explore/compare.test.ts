@@ -65,7 +65,12 @@ test('a changed view is one grouped finding with its shortest path', () => {
     'Count: 2',
     'Count: 3',
   ])
-  expect(screens[0]).toMatchObject({ after: 'Total: 0', count: 1, path: [''] })
+  expect(screens[0]).toMatchObject({
+    after: 'Total: 0',
+    count: 1,
+    path: [''],
+    states: { before: { count: 0 }, after: { count: 0 } },
+  })
 })
 
 test('a move only one version offers is reported', () => {

@@ -147,18 +147,36 @@
     color: var(--ink);
   }
 
-  .finding-before,
-  .finding-after {
+  .finding-note {
     margin: 6px 0 0;
-    padding-left: 8px;
-    border-left: 3px solid;
+    color: var(--muted);
   }
 
-  .finding-before {
+  .finding-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 10px;
+  }
+
+  .finding-pair figure {
+    margin: 0;
+    min-width: 0;
+  }
+
+  .finding-pair figcaption {
+    margin-bottom: 4px;
+    padding-left: 8px;
+    border-left: 3px solid;
+    font: 11px var(--mono);
+    color: var(--muted);
+  }
+
+  .finding-before figcaption {
     border-color: #e11d48;
   }
 
-  .finding-after {
+  .finding-after figcaption {
     border-color: #16a34a;
   }
 
