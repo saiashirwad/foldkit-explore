@@ -1,18 +1,19 @@
 import { AsyncData } from 'foldkit'
 
 import {
+  type Choices,
   type Environment,
-  type NextState,
-  type Transition,
+  type Move,
+  type State,
   answer,
+  fixture,
   pendingRequests,
   send,
-} from './lab/atlas'
-import { type Choices, fixture } from './lab/fixture'
+} from './explore'
 import { FetchWeather, Message, type Model } from './main'
 import { weatherData } from './main.fixture'
 
-function* next(state: NextState<Model, Message>): Choices<Transition<Message>> {
+function* next(state: State<Model, Message, string>): Choices<Move<Message>> {
   const kind = yield* fixture('next', { user: 'user', response: 'response' })
   if (kind === 'user') {
     const typing = {

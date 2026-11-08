@@ -2,14 +2,15 @@ import { Array, Option } from 'effect'
 import { AsyncData } from 'foldkit'
 
 import {
+  type Choices,
   type Environment,
-  type NextState,
-  type Transition,
+  type Move,
+  type State,
   answer,
+  fixture,
   pendingRequests,
   send,
-} from '../lab/atlas'
-import { type Choices, fixture } from '../lab/fixture'
+} from '../explore'
 import {
   Approval,
   type Check,
@@ -116,7 +117,7 @@ const userActions = (model: Model): Readonly<Record<string, Message>> => {
   return movesFor(model.release.data, model.submission)
 }
 
-function* next(state: NextState<Model, Message>): Choices<Transition<Message>> {
+function* next(state: State<Model, Message>): Choices<Move<Message>> {
   const kind = yield* fixture('next', {
     user: 'user',
     fetch: 'fetch',

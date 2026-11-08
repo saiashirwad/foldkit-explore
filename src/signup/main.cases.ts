@@ -1,28 +1,54 @@
 import {
+  type Choices,
   type Environment,
-  type NextState,
-  type Transition,
+  type Move,
+  type State,
   answer,
+  fixture,
   pendingRequests,
   send,
-} from '../lab/atlas'
-import { type Choices, fixture } from '../lab/fixture'
+} from '../explore'
 import {
   CheckUsername,
   CreateAccount,
   Message,
   type Model,
   type Plan,
+  Step,
 } from './main'
 
-function* next(state: NextState<Model, Message>): Choices<Transition<Message>> {
+// NOTE: These are the controls each step renders.
+const userMoves = (model: Model): Readonly<Record<string, Message>> =>
+  Step.match(model.step, {
+    Account: () => ({
+      typedNothing: Message.UpdatedUsername({ value: '' }),
+      typedAda: Message.UpdatedUsername({ value: 'ada' }),
+      typedGrace: Message.UpdatedUsername({ value: 'grace' }),
+      next: Message.ClickedNext(),
+    }),
+    Profile: () => ({
+      back: Message.ClickedBack(),
+      free: Message.SelectedPlan({ plan: 'Free' }),
+      pro: Message.SelectedPlan({ plan: 'Pro' }),
+      next: Message.ClickedNext(),
+    }),
+    Confirm: () => ({
+      back: Message.ClickedBack(),
+      submit: Message.SubmittedSignup(),
+    }),
+    Creating: () => ({}),
+    Created: () => ({}),
+    Failed: () => ({ retry: Message.ClickedRetry() }),
+  })
+
+function* next(state: State<Model, Message, Plan>): Choices<Move<Message>> {
   const kind = yield* fixture('next', {
     user: 'user',
     check: 'check',
     create: 'create',
   })
   if (kind === 'user') {
-    return send(yield* fixture('interaction', state.interactions))
+    return send(yield* fixture('move', userMoves(state.model)))
   }
   if (kind === 'check') {
     const request = yield* fixture(
@@ -50,21 +76,11 @@ function* next(state: NextState<Model, Message>): Choices<Transition<Message>> {
   )
 }
 
-export const longUsername =
-  'averylongunbrokenusernameforcheckinghowaccountdetailswraponnarrowdisplays'
-
 function* SignupStarts(): Choices<Plan> {
   return yield* fixture('arrivedFrom', { home: 'Free', pricing: 'Pro' })
 }
 
 export const signupEnvironment: Environment<Model, Message, Plan> = {
   starts: SignupStarts,
-  inputs: [{ label: 'Username', values: ['', 'ada', 'grace'] }],
-  next,
-}
-
-export const signupLongContentEnvironment: Environment<Model, Message, Plan> = {
-  starts: SignupStarts,
-  inputs: [{ label: 'Username', values: [longUsername] }],
   next,
 }

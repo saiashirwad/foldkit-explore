@@ -10,9 +10,7 @@
     "typecheck": "tsc --noEmit",
     "format": "oxfmt src",
     "test": "vitest run",
-    "lint": "oxlint src scripts",
-    "check:analysis": "bun scripts/check.mjs",
-    "test:browser": "node scripts/browser-smoke.mjs"
+    "lint": "oxlint src scripts"
   },
   "dependencies": {
     "@effect/platform-browser": "4.0.0",
@@ -30,7 +28,6 @@
     "happy-dom": "^20.14.5",
     "oxfmt": "^0.66.0",
     "oxlint": "^1.85.0",
-    "playwright": "1.64.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",
