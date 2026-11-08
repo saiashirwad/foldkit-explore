@@ -114,3 +114,16 @@ test('an empty comparison says whether the search finished', () => {
     expect(text('No differences found yet', { exact: false })).toExist(),
   )
 })
+
+test('hiding look-alikes keeps one card per look', () => {
+  scene(
+    lab,
+    given({ ...lab.init().model, depth: 2, isDeduped: true }),
+    expect(text(' of ', { exact: false })).toExist(),
+  )
+  scene(
+    lab,
+    given({ ...lab.init().model, depth: 2, isDeduped: false }),
+    expect(text(' of ', { exact: false })).toBeAbsent(),
+  )
+})

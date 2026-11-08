@@ -58,6 +58,19 @@
     font-weight: 600;
   }
 
+  .lab-toggle {
+    padding: 2px 8px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .lab-toggle[aria-pressed='true'] {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
   .lab-count {
     font: 11px var(--mono);
     color: var(--muted);
