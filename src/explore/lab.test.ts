@@ -1,3 +1,4 @@
+import { Option } from 'effect'
 import { click, expect, given, role, scene, text } from 'foldkit/scene'
 import { expect as expectValue, test } from 'vitest'
 
@@ -126,4 +127,22 @@ test('merging look-alikes explores fewer states', () => {
   expectValue(together.total).toBeLessThan(apart.total)
   // Merging is a bigger saving at depth: the cap is hit later.
   expectValue(together.isComplete || !apart.isComplete).toBe(true)
+})
+
+test('find reaches a screen by its text, and the gallery lists unsent Messages', () => {
+  const result = signup.find(
+    'create account',
+    { depth: 12, states: 3_000 },
+    true,
+  )
+  expectValue(Option.isSome(result.found)).toBe(true)
+  expectValue(
+    Option.match(result.found, {
+      onNone: () => 0,
+      onSome: found => found.path.length,
+    }),
+  ).toBeLessThan(8)
+  expectValue(
+    signup.run({ depth: 1, states: 100 }, [], false).neverSent,
+  ).toContain('SubmittedSignup')
 })

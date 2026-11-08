@@ -1,4 +1,4 @@
-import { Array, type Schema } from 'effect'
+import { Array, Predicate, type Schema } from 'effect'
 import type { Update } from 'foldkit'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
@@ -96,6 +96,8 @@ export type Edge = Readonly<{
   from: number
   to: number
   via: ReadonlyArray<string>
+  // The `_tag` of the Message this move sent, when it has one.
+  tag: string | undefined
 }>
 
 export type Limits = Readonly<{
@@ -110,6 +112,8 @@ export type Graph<Model, Message, Input = void> = Readonly<{
   edges: ReadonlyArray<Edge>
   // False when depth or states cut the search short.
   isComplete: boolean
+  // The first state `until` accepted. The search stops there.
+  found: number | undefined
 }>
 
 // The key states merge on unless the environment sets its own.
@@ -120,6 +124,13 @@ export const defaultKey = <Model, Message, Input>(
   state.model,
   Array.map(state.pending, command => [command.name, command.args ?? {}]),
 ]
+
+const tagOf = (message: unknown): string | undefined => {
+  const tag = Predicate.hasProperty(message, '_tag')
+    ? Reflect.get(message, '_tag')
+    : undefined
+  return typeof tag === 'string' ? tag : undefined
+}
 
 const issued = <Message>(
   result: Update.Return<unknown, Message>,
@@ -156,16 +167,22 @@ export const explore = <Model, Message, Input>(
   program: Program<Model, Message, Input>,
   environment: Environment<Model, Message, Input>,
   limits: Limits,
+  // Stop at the first state this accepts, and report it as `found`.
+  until?: (state: State<Model, Message, Input>) => boolean,
 ): Graph<Model, Message, Input> => {
   const nodes: Array<Node<Model, Message, Input>> = []
   const edges: Array<Edge> = []
   const ids = new Map<string, number>()
-  const status = { isComplete: true }
+  const status: { isComplete: boolean; found: number | undefined } = {
+    isComplete: true,
+    found: undefined,
+  }
 
   const reach = (
     next: State<Model, Message, Input>,
     from: Node<Model, Message, Input> | undefined,
     via: ReadonlyArray<string>,
+    tag?: string,
   ): void => {
     if (environment.prune?.(next)) {
       return
@@ -191,13 +208,19 @@ export const explore = <Model, Message, Input>(
         via,
         shown: environment.show?.(next) ?? true,
       })
+      if (status.found === undefined && until?.(next)) {
+        status.found = id
+      }
     }
     if (from !== undefined) {
-      edges.push({ from: from.id, to: id, via })
+      edges.push({ from: from.id, to: id, via, tag })
     }
   }
 
   for (const { path, value: input } of outcomes(environment.starts)) {
+    if (status.found !== undefined) {
+      break
+    }
     const started = program.start(input)
     reach(
       { model: started.model, pending: issued(started), input },
@@ -209,7 +232,7 @@ export const explore = <Model, Message, Input>(
   const next = environment.next
   // NOTE: Nodes appended during the loop are visited in turn: breadth first.
   for (const node of nodes) {
-    if (next === undefined) {
+    if (next === undefined || status.found !== undefined) {
       break
     }
     const moves = outcomes(() => next(node))
@@ -218,8 +241,16 @@ export const explore = <Model, Message, Input>(
       continue
     }
     for (const { path, value: move } of moves) {
-      reach(apply(program, node, move), node, path)
+      if (status.found !== undefined) {
+        break
+      }
+      reach(apply(program, node, move), node, path, tagOf(move.message))
     }
   }
-  return { nodes, edges, isComplete: status.isComplete }
+  return {
+    nodes,
+    edges,
+    isComplete: status.isComplete && status.found === undefined,
+    found: status.found,
+  }
 }
