@@ -3,7 +3,7 @@ import { expect as expectValue, test } from 'vitest'
 
 import * as Signup from '../signup/main'
 import { signupEnvironment } from '../signup/main.cases'
-import { makeCase, makeLab } from './lab'
+import { Message, makeCase, makeLab } from './lab'
 
 const signup = makeCase(
   {
@@ -49,4 +49,16 @@ test('a click in a preview adds the state it leads to', () => {
     },
   ])
   expectValue(after.total).toBe(before.total + 1)
+})
+
+test('reset clears pruned states and clicks', () => {
+  const dirty = {
+    ...lab.init().model,
+    pruned: ['a'],
+    clicks: [{ key: 'b', message: Signup.Message.ClickedNext() }],
+  }
+  expectValue(lab.update(dirty, Message.ClickedReset()).model).toMatchObject({
+    pruned: [],
+    clicks: [],
+  })
 })

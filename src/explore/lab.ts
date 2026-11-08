@@ -336,7 +336,7 @@ export const makeLab = (cases: Array.NonEmptyReadonlyArray<Case>) => {
         }),
       }),
       ClickedReset: () => ({
-        model: modifyFields(model, { pruned: () => [] }),
+        model: modifyFields(model, { pruned: () => [], clicks: () => [] }),
       }),
       InteractedWithState: ({ key, depth, message }) => ({
         model: modifyFields(model, {
