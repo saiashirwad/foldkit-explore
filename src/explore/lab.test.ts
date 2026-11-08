@@ -33,5 +33,6 @@ test('pruning a state removes it', () => {
     expect(text('S2')).toExist(),
     click(role('button', { name: 'Prune S2' })),
     expect(role('button', { name: 'Restore pruned' })).toExist(),
+    expect(text('Prune rule for your code')).toExist(),
   )
 })

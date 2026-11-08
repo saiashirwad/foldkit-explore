@@ -77,6 +77,22 @@
     padding: 20px 24px;
   }
 
+  .lab-rule {
+    padding: 8px 24px;
+    font: 11px var(--mono);
+    color: var(--muted);
+  }
+
+  .lab-rule pre {
+    overflow: auto;
+    margin: 6px 0 0;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: white;
+    color: var(--ink);
+  }
+
   .state {
     display: flex;
     flex-direction: column;

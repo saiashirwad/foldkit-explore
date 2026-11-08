@@ -124,6 +124,18 @@ const cardView = (card: Card, h: HtmlBuilder<Message>): Html =>
     ],
   )
 
+// NOTE: Pruned states are keyed by the default key, so the rule only matches
+// an environment that has not set its own `key`.
+const ruleOf = (keys: ReadonlyArray<string>): string =>
+  [
+    'const pruned = new Set([',
+    ...Array.map(keys, key => `  ${JSON.stringify(key)},`),
+    '])',
+    '',
+    '// in the Environment:',
+    'prune: state => pruned.has(keyOf(defaultKey(state))),',
+  ].join('\n')
+
 const countView = (result: Result, pruned: number): string =>
   [
     `${result.total} states`,
@@ -201,6 +213,15 @@ const gridView = (
             : h.empty,
         ],
       ),
+      keys.length > 0
+        ? h.details(
+            [h.Class('lab-rule')],
+            [
+              h.summary([], ['Prune rule for your code']),
+              h.pre([], [ruleOf(keys)]),
+            ],
+          )
+        : h.empty,
       h.section(
         [h.Class('lab-grid'), h.AriaLabel('States')],
         Array.map(result.cards, card => cardView(card, h)),
