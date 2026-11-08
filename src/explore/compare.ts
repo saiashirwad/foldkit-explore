@@ -8,7 +8,7 @@ import {
   explore,
 } from './explore'
 import { keyOf } from './key'
-import { screenOf } from './screen'
+import { type Screen, screenOf } from './screen'
 
 export type Finding<Model = unknown> = Readonly<{
   kind: 'screen' | 'commands' | 'only-before' | 'only-after'
@@ -30,36 +30,66 @@ export type Comparison<Model = unknown> = Readonly<{
   isComplete: boolean
 }>
 
-const outgoing = <Model, Message, Input>(
-  graph: Graph<Model, Message, Input>,
-): ReadonlyMap<number, ReadonlyMap<string, number>> => {
-  const byNode = new Map<number, Map<string, number>>()
-  for (const edge of graph.edges) {
-    byNode.set(
-      edge.from,
-      (byNode.get(edge.from) ?? new Map()).set(edge.via.join(' · '), edge.to),
-    )
-  }
-  return byNode
-}
+// One side of a comparison: a graph of states with what each one shows.
+export type Side<Model> = Readonly<{
+  // The start states, by the choices that led to them.
+  roots: ReadonlyMap<string, number>
+  // Each state's moves, by the choices that made them, and where they lead.
+  out: ReadonlyMap<number, ReadonlyMap<string, number>>
+  screen: (id: number) => Screen
+  commands: (id: number) => string
+  // Absent when the side was loaded from a snapshot.
+  model: (id: number) => Model | undefined
+  isComplete: boolean
+}>
 
 const commandsOf = (
   pending: ReadonlyArray<Readonly<{ name: string; args?: unknown }>>,
 ): string => Array.map(pending, command => command.name).join(', ')
 
-// Runs both versions in the same environment and pairs their states by the
-// choices that led to them. Differences are grouped; each keeps its shortest
-// path.
-export const compare = <Model, Message, Input>(
-  before: Program<Model, Message, Input>,
-  after: Program<Model, Message, Input>,
-  environment: Environment<Model, Message, Input>,
-  limits: Limits,
+export const sideOf = <Model, Message, Input>(
+  program: Program<Model, Message, Input>,
+  graph: Graph<Model, Message, Input>,
+): Side<Model> => {
+  const out = new Map<number, Map<string, number>>()
+  for (const edge of graph.edges) {
+    out.set(
+      edge.from,
+      (out.get(edge.from) ?? new Map()).set(edge.via.join(' · '), edge.to),
+    )
+  }
+  const screens = new Map<number, Screen>()
+  return {
+    roots: new Map(
+      Array.map(
+        Array.filter(graph.nodes, node => node.depth === 0),
+        node => [node.via.join(' · '), node.id] as const,
+      ),
+    ),
+    out,
+    screen: id => {
+      const known = screens.get(id)
+      const node = graph.nodes[id]
+      const screen =
+        known ??
+        (node === undefined
+          ? { text: '', key: '' }
+          : screenOf(program.view, node.model))
+      screens.set(id, screen)
+      return screen
+    },
+    commands: id => commandsOf(graph.nodes[id]?.pending ?? []),
+    model: id => graph.nodes[id]?.model,
+    isComplete: graph.isComplete,
+  }
+}
+
+// Pairs the states of two sides by the choices that led to them. Differences
+// are grouped; each keeps its shortest path.
+export const diff = <Model>(
+  left: Side<Model>,
+  right: Side<Model>,
 ): Comparison<Model> => {
-  const left = explore(before, environment, limits)
-  const right = explore(after, environment, limits)
-  const leftEdges = outgoing(left)
-  const rightEdges = outgoing(right)
   const groups = new Map<string, Finding<Model>>()
   const note = (
     finding: Omit<Finding<Model>, 'count'>,
@@ -83,22 +113,21 @@ export const compare = <Model, Message, Input>(
   ): void => {
     const next = Array.append(path, move)
     if (leftId === undefined || rightId === undefined) {
-      const text = `${move}`
       note(
         leftId === undefined
           ? {
               kind: 'only-after',
-              after: text,
+              after: move,
               path: next,
               ...(states && { states }),
             }
           : {
               kind: 'only-before',
-              before: text,
+              before: move,
               path: next,
               ...(states && { states }),
             },
-        [text, leftId === undefined],
+        [move, leftId === undefined],
       )
       return
     }
@@ -108,49 +137,44 @@ export const compare = <Model, Message, Input>(
     }
   }
 
-  const roots = (graph: typeof left) =>
-    new Map(
-      Array.map(
-        Array.filter(graph.nodes, node => node.depth === 0),
-        node => [node.via.join(' · '), node.id] as const,
-      ),
-    )
-  const leftRoots = roots(left)
-  const rightRoots = roots(right)
-  for (const move of new Set([...leftRoots.keys(), ...rightRoots.keys()])) {
-    pair(leftRoots.get(move), rightRoots.get(move), [], move)
+  for (const move of new Set([...left.roots.keys(), ...right.roots.keys()])) {
+    pair(left.roots.get(move), right.roots.get(move), [], move)
   }
 
   for (const current of queue) {
-    const a = left.nodes[current.left]
-    const b = right.nodes[current.right]
-    if (a === undefined || b === undefined) {
-      continue
-    }
-    const states = { before: a.model, after: b.model }
-    const x = screenOf(before.view, a.model)
-    const y = screenOf(after.view, b.model)
+    const x = left.screen(current.left)
+    const y = right.screen(current.right)
+    const a = left.model(current.left)
+    const b = right.model(current.right)
+    const states =
+      a === undefined || b === undefined ? undefined : { before: a, after: b }
     if (x.key !== y.key) {
       note(
         {
           kind: 'screen',
           before: x.text,
           after: y.text,
-          states,
           path: current.path,
+          ...(states && { states }),
         },
         [x.key, y.key],
       )
     }
-    const [c, d] = [commandsOf(a.pending), commandsOf(b.pending)]
+    const [c, d] = [left.commands(current.left), right.commands(current.right)]
     if (c !== d) {
       note(
-        { kind: 'commands', before: c, after: d, states, path: current.path },
+        {
+          kind: 'commands',
+          before: c,
+          after: d,
+          path: current.path,
+          ...(states && { states }),
+        },
         [c, d],
       )
     }
-    const moves = new Map(leftEdges.get(a.id))
-    const others = new Map(rightEdges.get(b.id))
+    const moves = left.out.get(current.left) ?? new Map<string, number>()
+    const others = right.out.get(current.right) ?? new Map<string, number>()
     for (const move of new Set([...moves.keys(), ...others.keys()])) {
       pair(moves.get(move), others.get(move), current.path, move, states)
     }
@@ -161,3 +185,15 @@ export const compare = <Model, Message, Input>(
     isComplete: left.isComplete && right.isComplete,
   }
 }
+
+// Runs both versions in the same environment and diffs what they reach.
+export const compare = <Model, Message, Input>(
+  before: Program<Model, Message, Input>,
+  after: Program<Model, Message, Input>,
+  environment: Environment<Model, Message, Input>,
+  limits: Limits,
+): Comparison<Model> =>
+  diff(
+    sideOf(before, explore(before, environment, limits)),
+    sideOf(after, explore(after, environment, limits)),
+  )

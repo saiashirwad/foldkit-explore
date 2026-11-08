@@ -10,6 +10,7 @@ import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 import { defineView } from 'foldkit/submodel'
 
+import { type Snapshot, diffSnapshots, snapshotOf } from './baseline'
 import { deadEnds, find as findState, neverSent, tagsOf } from './check'
 import { type Choices, fixture } from './choices'
 import { type Finding, compare } from './compare'
@@ -276,6 +277,27 @@ export const makeComparison = <ProgramModel, ProgramMessage, Input>(
     },
   }
 }
+
+// The program as it is now, against a committed baseline. The baseline's own
+// limits are used, so the depth control does not apply.
+export const makeBaselineComparison = <ProgramModel, ProgramMessage, Input>(
+  name: string,
+  program: Program<ProgramModel, ProgramMessage, Input>,
+  environment: Environment<ProgramModel, ProgramMessage, Input>,
+  baseline: Snapshot,
+): ComparisonCase => ({
+  name,
+  run: () => {
+    const result = diffSnapshots(
+      baseline,
+      snapshotOf(program, environment, baseline.limits),
+    )
+    return {
+      ...result,
+      findings: Array.map(result.findings, finding => ({ finding })),
+    }
+  },
+})
 
 // MODEL
 
@@ -709,14 +731,19 @@ const findingLabels: Readonly<Record<Finding['kind'], string>> = {
   'only-after': 'Move added',
 }
 
-const findingNote = (finding: Finding): string | undefined =>
-  finding.kind === 'commands'
-    ? `Pending requests: ${finding.before || 'none'} → ${finding.after || 'none'}`
-    : finding.kind === 'only-before'
-      ? `Only the old version offers the move "${finding.before}".`
-      : finding.kind === 'only-after'
-        ? `Only the new version offers the move "${finding.after}".`
-        : undefined
+const findingNote = (
+  finding: Finding,
+  hasPreview: boolean,
+): string | undefined =>
+  finding.kind === 'screen' && !hasPreview
+    ? `Was "${finding.before}", now "${finding.after}".`
+    : finding.kind === 'commands'
+      ? `Pending requests: ${finding.before || 'none'} → ${finding.after || 'none'}`
+      : finding.kind === 'only-before'
+        ? `Only the old version offers the move "${finding.before}".`
+        : finding.kind === 'only-after'
+          ? `Only the new version offers the move "${finding.after}".`
+          : undefined
 
 const findingView = (
   { finding, render }: FindingView,
@@ -733,10 +760,13 @@ const findingView = (
           h.span([h.Class('finding-path')], [finding.path.join(' › ')]),
         ],
       ),
-      Option.match(Option.fromNullishOr(findingNote(finding)), {
-        onNone: () => h.empty,
-        onSome: note => h.p([h.Class('finding-note')], [note]),
-      }),
+      Option.match(
+        Option.fromNullishOr(findingNote(finding, render !== undefined)),
+        {
+          onNone: () => h.empty,
+          onSome: note => h.p([h.Class('finding-note')], [note]),
+        },
+      ),
       render === undefined
         ? h.empty
         : h.div(
@@ -800,7 +830,7 @@ const compareView = (
             [
               result.isComplete
                 ? 'No differences. The two versions behave the same in everything explored.'
-                : `No differences found yet. The search was cut off at depth ${depth} or ${COMPARE_STATES} states, so a difference may be further away.`,
+                : 'No differences found yet. The search was cut off, so a difference may be further away.',
             ],
           )
         : h.empty,

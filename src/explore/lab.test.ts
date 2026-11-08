@@ -5,7 +5,14 @@ import { expect as expectValue, test } from 'vitest'
 import * as Signup from '../signup/main'
 import { signupEnvironment } from '../signup/main.cases'
 import { headingChanged, original } from '../signup/variants'
-import { Message, makeCase, makeComparison, makeLab } from './lab'
+import { snapshotOf } from './baseline'
+import {
+  Message,
+  makeBaselineComparison,
+  makeCase,
+  makeComparison,
+  makeLab,
+} from './lab'
 
 const signup = makeCase(
   {
@@ -145,4 +152,29 @@ test('find reaches a screen by its text, and the gallery lists unsent Messages',
   expectValue(
     signup.run({ depth: 1, states: 100 }, [], false).neverSent,
   ).toContain('SubmittedSignup')
+})
+
+test('a baseline comparison reports what changed since the snapshot', () => {
+  const baseline = snapshotOf(original, signupEnvironment, {
+    depth: 5,
+    states: 3_000,
+  })
+  const same = makeBaselineComparison(
+    'Same',
+    original,
+    signupEnvironment,
+    baseline,
+  )
+  const changed = makeBaselineComparison(
+    'Changed',
+    headingChanged,
+    signupEnvironment,
+    baseline,
+  )
+  expectValue(same.run({ depth: 0, states: 0 }).findings).toEqual([])
+  expectValue(
+    changed
+      .run({ depth: 0, states: 0 })
+      .findings.map(({ finding }) => finding.kind),
+  ).toContain('screen')
 })

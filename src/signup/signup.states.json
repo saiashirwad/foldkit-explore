@@ -1,0 +1,1676 @@
+{
+  "version": 1,
+  "name": "Signup",
+  "isComplete": false,
+  "limits": { "depth": 5, "states": 3000 },
+  "roots": [
+    ["home", 0],
+    ["pricing", 1]
+  ],
+  "nodes": [
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "12d14bc3a31f6",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "1a076c9be8a702",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "12d14bc3a31f6",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "1a076c9be8a702",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "1a076c9be8a702",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "cbc6d495021f4",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "12d14bc3a31f6",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "cbc6d495021f4",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "1a076c9be8a702",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "13ab63ae52a75e",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "12d14bc3a31f6",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "13ab63ae52a75e",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "12d14bc3a31f6",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "12d14bc3a31f6",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "12d14bc3a31f6",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "cbc6d495021f4",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "13ab63ae52a75e",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ada Plan Free Back Create account",
+      "hash": "3dad25f47b910",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "1a076c9be8a702",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "1a076c9be8a702",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "1a076c9be8a702",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "cbc6d495021f4",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "13ab63ae52a75e",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username grace Plan Free Back Create account",
+      "hash": "1f2bc9bdea2b47",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "12d14bc3a31f6",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "12d14bc3a31f6",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "12d14bc3a31f6",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "13ab63ae52a75e",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "cbc6d495021f4",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ada Plan Pro Back Create account",
+      "hash": "12356e8612a81c",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "1a076c9be8a702",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "1a076c9be8a702",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "1a076c9be8a702",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "13ab63ae52a75e",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "cbc6d495021f4",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username grace Plan Pro Back Create account",
+      "hash": "145d598dfa3d5e",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "1a076c9be8a702",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "cbc6d495021f4",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "1a076c9be8a702",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "1a076c9be8a702",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "cbc6d495021f4",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "cbc6d495021f4",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "13ab63ae52a75e",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username grace Plan Free Back Create account",
+      "hash": "1f2bc9bdea2b47",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ada Plan Pro Back Create account",
+      "hash": "12356e8612a81c",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ada Plan Free Creating account…",
+      "hash": "16aebd0bf9e440",
+      "commands": "CreateAccount"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "12d14bc3a31f6",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "cbc6d495021f4",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "12d14bc3a31f6",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "12d14bc3a31f6",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "cbc6d495021f4",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "cbc6d495021f4",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "13ab63ae52a75e",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ada Plan Free Back Create account",
+      "hash": "3dad25f47b910",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username grace Plan Pro Back Create account",
+      "hash": "145d598dfa3d5e",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username grace Plan Free Creating account…",
+      "hash": "1047ff826416da",
+      "commands": "CreateAccount"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "1a076c9be8a702",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "13ab63ae52a75e",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "133c57c1703cf3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "1a076c9be8a702",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "1a076c9be8a702",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "13ab63ae52a75e",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "13ab63ae52a75e",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "cbc6d495021f4",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username grace Plan Pro Back Create account",
+      "hash": "145d598dfa3d5e",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ada Plan Free Back Create account",
+      "hash": "3dad25f47b910",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ada Plan Pro Creating account…",
+      "hash": "747e684c59678",
+      "commands": "CreateAccount"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "12d14bc3a31f6",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "13ab63ae52a75e",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Pick a name Next",
+      "hash": "143bb912d8263e",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username Checking… Next",
+      "hash": "112131e5c43b3",
+      "commands": "CheckUsername, CheckUsername, CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "12d14bc3a31f6",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "84b60eabde652",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username That name is taken Next",
+      "hash": "12d14bc3a31f6",
+      "commands": "CheckUsername, CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "13ab63ae52a75e",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "13ab63ae52a75e",
+      "commands": "CheckUsername, CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Free 3 projects Pro Unlimited, $8/mo Back Next",
+      "hash": "cbc6d495021f4",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ada Plan Pro Back Create account",
+      "hash": "12356e8612a81c",
+      "commands": "CheckUsername"
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username ✓ Available Next",
+      "hash": "24a704a4fd976",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username grace Plan Free Back Create account",
+      "hash": "1f2bc9bdea2b47",
+      "commands": ""
+    },
+    {
+      "text": "Sign up 1. Account 2. Profile 3. Confirm Username grace Plan Pro Creating account…",
+      "hash": "d5a0c2f4058f5",
+      "commands": "CreateAccount"
+    }
+  ],
+  "edges": [
+    [0, 0, "user · typedNothing"],
+    [0, 2, "user · typedAda"],
+    [0, 3, "user · typedGrace"],
+    [0, 0, "user · next"],
+    [1, 1, "user · typedNothing"],
+    [1, 4, "user · typedAda"],
+    [1, 5, "user · typedGrace"],
+    [1, 1, "user · next"],
+    [2, 6, "user · typedNothing"],
+    [2, 2, "user · typedAda"],
+    [2, 7, "user · typedGrace"],
+    [2, 2, "user · next"],
+    [2, 8, "check · 0 · free"],
+    [2, 9, "check · 0 · taken"],
+    [3, 10, "user · typedNothing"],
+    [3, 11, "user · typedAda"],
+    [3, 3, "user · typedGrace"],
+    [3, 3, "user · next"],
+    [3, 12, "check · 0 · free"],
+    [3, 13, "check · 0 · taken"],
+    [4, 14, "user · typedNothing"],
+    [4, 4, "user · typedAda"],
+    [4, 15, "user · typedGrace"],
+    [4, 4, "user · next"],
+    [4, 16, "check · 0 · free"],
+    [4, 17, "check · 0 · taken"],
+    [5, 18, "user · typedNothing"],
+    [5, 19, "user · typedAda"],
+    [5, 5, "user · typedGrace"],
+    [5, 5, "user · next"],
+    [5, 20, "check · 0 · free"],
+    [5, 21, "check · 0 · taken"],
+    [6, 6, "user · typedNothing"],
+    [6, 22, "user · typedAda"],
+    [6, 7, "user · typedGrace"],
+    [6, 6, "user · next"],
+    [6, 0, "check · 0 · free"],
+    [6, 0, "check · 0 · taken"],
+    [7, 23, "user · typedNothing"],
+    [7, 24, "user · typedAda"],
+    [7, 7, "user · typedGrace"],
+    [7, 7, "user · next"],
+    [7, 3, "check · 0 · free"],
+    [7, 3, "check · 0 · taken"],
+    [7, 25, "check · 1 · free"],
+    [7, 26, "check · 1 · taken"],
+    [8, 0, "user · typedNothing"],
+    [8, 8, "user · typedAda"],
+    [8, 3, "user · typedGrace"],
+    [8, 27, "user · next"],
+    [9, 0, "user · typedNothing"],
+    [9, 9, "user · typedAda"],
+    [9, 3, "user · typedGrace"],
+    [9, 9, "user · next"],
+    [10, 10, "user · typedNothing"],
+    [10, 11, "user · typedAda"],
+    [10, 28, "user · typedGrace"],
+    [10, 10, "user · next"],
+    [10, 0, "check · 0 · free"],
+    [10, 0, "check · 0 · taken"],
+    [11, 29, "user · typedNothing"],
+    [11, 11, "user · typedAda"],
+    [11, 30, "user · typedGrace"],
+    [11, 11, "user · next"],
+    [11, 2, "check · 0 · free"],
+    [11, 2, "check · 0 · taken"],
+    [11, 31, "check · 1 · free"],
+    [11, 32, "check · 1 · taken"],
+    [12, 0, "user · typedNothing"],
+    [12, 2, "user · typedAda"],
+    [12, 12, "user · typedGrace"],
+    [12, 33, "user · next"],
+    [13, 0, "user · typedNothing"],
+    [13, 2, "user · typedAda"],
+    [13, 13, "user · typedGrace"],
+    [13, 13, "user · next"],
+    [14, 14, "user · typedNothing"],
+    [14, 34, "user · typedAda"],
+    [14, 15, "user · typedGrace"],
+    [14, 14, "user · next"],
+    [14, 1, "check · 0 · free"],
+    [14, 1, "check · 0 · taken"],
+    [15, 35, "user · typedNothing"],
+    [15, 36, "user · typedAda"],
+    [15, 15, "user · typedGrace"],
+    [15, 15, "user · next"],
+    [15, 5, "check · 0 · free"],
+    [15, 5, "check · 0 · taken"],
+    [15, 37, "check · 1 · free"],
+    [15, 38, "check · 1 · taken"],
+    [16, 1, "user · typedNothing"],
+    [16, 16, "user · typedAda"],
+    [16, 5, "user · typedGrace"],
+    [16, 39, "user · next"],
+    [17, 1, "user · typedNothing"],
+    [17, 17, "user · typedAda"],
+    [17, 5, "user · typedGrace"],
+    [17, 17, "user · next"],
+    [18, 18, "user · typedNothing"],
+    [18, 19, "user · typedAda"],
+    [18, 40, "user · typedGrace"],
+    [18, 18, "user · next"],
+    [18, 1, "check · 0 · free"],
+    [18, 1, "check · 0 · taken"],
+    [19, 41, "user · typedNothing"],
+    [19, 19, "user · typedAda"],
+    [19, 42, "user · typedGrace"],
+    [19, 19, "user · next"],
+    [19, 4, "check · 0 · free"],
+    [19, 4, "check · 0 · taken"],
+    [19, 43, "check · 1 · free"],
+    [19, 44, "check · 1 · taken"],
+    [20, 1, "user · typedNothing"],
+    [20, 4, "user · typedAda"],
+    [20, 20, "user · typedGrace"],
+    [20, 45, "user · next"],
+    [21, 1, "user · typedNothing"],
+    [21, 4, "user · typedAda"],
+    [21, 21, "user · typedGrace"],
+    [21, 21, "user · next"],
+    [22, 46, "user · typedNothing"],
+    [22, 22, "user · typedAda"],
+    [22, 47, "user · typedGrace"],
+    [22, 22, "user · next"],
+    [22, 48, "check · 0 · free"],
+    [22, 49, "check · 0 · taken"],
+    [22, 48, "check · 1 · free"],
+    [22, 49, "check · 1 · taken"],
+    [23, 23, "user · typedNothing"],
+    [23, 24, "user · typedAda"],
+    [23, 50, "user · typedGrace"],
+    [23, 23, "user · next"],
+    [23, 10, "check · 0 · free"],
+    [23, 10, "check · 0 · taken"],
+    [23, 6, "check · 1 · free"],
+    [23, 6, "check · 1 · taken"],
+    [24, 51, "user · typedNothing"],
+    [24, 24, "user · typedAda"],
+    [24, 52, "user · typedGrace"],
+    [24, 24, "user · next"],
+    [24, 53, "check · 0 · free"],
+    [24, 54, "check · 0 · taken"],
+    [24, 22, "check · 1 · free"],
+    [24, 22, "check · 1 · taken"],
+    [24, 55, "check · 2 · free"],
+    [24, 56, "check · 2 · taken"],
+    [25, 6, "user · typedNothing"],
+    [25, 22, "user · typedAda"],
+    [25, 25, "user · typedGrace"],
+    [25, 57, "user · next"],
+    [25, 12, "check · 0 · free"],
+    [25, 12, "check · 0 · taken"],
+    [26, 6, "user · typedNothing"],
+    [26, 22, "user · typedAda"],
+    [26, 26, "user · typedGrace"],
+    [26, 26, "user · next"],
+    [26, 13, "check · 0 · free"],
+    [26, 13, "check · 0 · taken"],
+    [27, 8, "user · back"],
+    [27, 27, "user · free"],
+    [27, 58, "user · pro"],
+    [27, 59, "user · next"],
+    [28, 60, "user · typedNothing"],
+    [28, 61, "user · typedAda"],
+    [28, 28, "user · typedGrace"],
+    [28, 28, "user · next"],
+    [28, 62, "check · 0 · free"],
+    [28, 63, "check · 0 · taken"],
+    [28, 62, "check · 1 · free"],
+    [28, 63, "check · 1 · taken"],
+    [29, 29, "user · typedNothing"],
+    [29, 64, "user · typedAda"],
+    [29, 30, "user · typedGrace"],
+    [29, 29, "user · next"],
+    [29, 6, "check · 0 · free"],
+    [29, 6, "check · 0 · taken"],
+    [29, 10, "check · 1 · free"],
+    [29, 10, "check · 1 · taken"],
+    [30, 65, "user · typedNothing"],
+    [30, 66, "user · typedAda"],
+    [30, 30, "user · typedGrace"],
+    [30, 30, "user · next"],
+    [30, 67, "check · 0 · free"],
+    [30, 68, "check · 0 · taken"],
+    [30, 28, "check · 1 · free"],
+    [30, 28, "check · 1 · taken"],
+    [30, 69, "check · 2 · free"],
+    [30, 70, "check · 2 · taken"],
+    [31, 10, "user · typedNothing"],
+    [31, 31, "user · typedAda"],
+    [31, 28, "user · typedGrace"],
+    [31, 71, "user · next"],
+    [31, 8, "check · 0 · free"],
+    [31, 8, "check · 0 · taken"],
+    [32, 10, "user · typedNothing"],
+    [32, 32, "user · typedAda"],
+    [32, 28, "user · typedGrace"],
+    [32, 32, "user · next"],
+    [32, 9, "check · 0 · free"],
+    [32, 9, "check · 0 · taken"],
+    [33, 12, "user · back"],
+    [33, 33, "user · free"],
+    [33, 72, "user · pro"],
+    [33, 73, "user · next"],
+    [34, 74, "user · typedNothing"],
+    [34, 34, "user · typedAda"],
+    [34, 75, "user · typedGrace"],
+    [34, 34, "user · next"],
+    [34, 76, "check · 0 · free"],
+    [34, 77, "check · 0 · taken"],
+    [34, 76, "check · 1 · free"],
+    [34, 77, "check · 1 · taken"],
+    [35, 35, "user · typedNothing"],
+    [35, 36, "user · typedAda"],
+    [35, 78, "user · typedGrace"],
+    [35, 35, "user · next"],
+    [35, 18, "check · 0 · free"],
+    [35, 18, "check · 0 · taken"],
+    [35, 14, "check · 1 · free"],
+    [35, 14, "check · 1 · taken"],
+    [36, 79, "user · typedNothing"],
+    [36, 36, "user · typedAda"],
+    [36, 80, "user · typedGrace"],
+    [36, 36, "user · next"],
+    [36, 81, "check · 0 · free"],
+    [36, 82, "check · 0 · taken"],
+    [36, 34, "check · 1 · free"],
+    [36, 34, "check · 1 · taken"],
+    [36, 83, "check · 2 · free"],
+    [36, 84, "check · 2 · taken"],
+    [37, 14, "user · typedNothing"],
+    [37, 34, "user · typedAda"],
+    [37, 37, "user · typedGrace"],
+    [37, 85, "user · next"],
+    [37, 20, "check · 0 · free"],
+    [37, 20, "check · 0 · taken"],
+    [38, 14, "user · typedNothing"],
+    [38, 34, "user · typedAda"],
+    [38, 38, "user · typedGrace"],
+    [38, 38, "user · next"],
+    [38, 21, "check · 0 · free"],
+    [38, 21, "check · 0 · taken"],
+    [39, 16, "user · back"],
+    [39, 86, "user · free"],
+    [39, 39, "user · pro"],
+    [39, 87, "user · next"],
+    [40, 88, "user · typedNothing"],
+    [40, 89, "user · typedAda"],
+    [40, 40, "user · typedGrace"],
+    [40, 40, "user · next"],
+    [40, 90, "check · 0 · free"],
+    [40, 91, "check · 0 · taken"],
+    [40, 90, "check · 1 · free"],
+    [40, 91, "check · 1 · taken"],
+    [41, 41, "user · typedNothing"],
+    [41, 92, "user · typedAda"],
+    [41, 42, "user · typedGrace"],
+    [41, 41, "user · next"],
+    [41, 14, "check · 0 · free"],
+    [41, 14, "check · 0 · taken"],
+    [41, 18, "check · 1 · free"],
+    [41, 18, "check · 1 · taken"],
+    [42, 93, "user · typedNothing"],
+    [42, 94, "user · typedAda"],
+    [42, 42, "user · typedGrace"],
+    [42, 42, "user · next"],
+    [42, 95, "check · 0 · free"],
+    [42, 96, "check · 0 · taken"],
+    [42, 40, "check · 1 · free"],
+    [42, 40, "check · 1 · taken"],
+    [42, 97, "check · 2 · free"],
+    [42, 98, "check · 2 · taken"],
+    [43, 18, "user · typedNothing"],
+    [43, 43, "user · typedAda"],
+    [43, 40, "user · typedGrace"],
+    [43, 99, "user · next"],
+    [43, 16, "check · 0 · free"],
+    [43, 16, "check · 0 · taken"],
+    [44, 18, "user · typedNothing"],
+    [44, 44, "user · typedAda"],
+    [44, 40, "user · typedGrace"],
+    [44, 44, "user · next"],
+    [44, 17, "check · 0 · free"],
+    [44, 17, "check · 0 · taken"],
+    [45, 20, "user · back"],
+    [45, 100, "user · free"],
+    [45, 45, "user · pro"],
+    [45, 101, "user · next"],
+    [46, 46, "user · typedNothing"],
+    [46, 102, "user · typedAda"],
+    [46, 47, "user · typedGrace"],
+    [46, 46, "user · next"],
+    [46, 6, "check · 0 · free"],
+    [46, 6, "check · 0 · taken"],
+    [46, 6, "check · 1 · free"],
+    [46, 6, "check · 1 · taken"],
+    [47, 103, "user · typedNothing"],
+    [47, 104, "user · typedAda"],
+    [47, 47, "user · typedGrace"],
+    [47, 47, "user · next"],
+    [47, 7, "check · 0 · free"],
+    [47, 7, "check · 0 · taken"],
+    [47, 7, "check · 1 · free"],
+    [47, 7, "check · 1 · taken"],
+    [47, 105, "check · 2 · free"],
+    [47, 106, "check · 2 · taken"],
+    [48, 6, "user · typedNothing"],
+    [48, 48, "user · typedAda"],
+    [48, 7, "user · typedGrace"],
+    [48, 107, "user · next"],
+    [48, 8, "check · 0 · free"],
+    [48, 9, "check · 0 · taken"],
+    [49, 6, "user · typedNothing"],
+    [49, 49, "user · typedAda"],
+    [49, 7, "user · typedGrace"],
+    [49, 49, "user · next"],
+    [49, 8, "check · 0 · free"],
+    [49, 9, "check · 0 · taken"],
+    [50, 108, "user · typedNothing"],
+    [50, 109, "user · typedAda"],
+    [50, 50, "user · typedGrace"],
+    [50, 50, "user · next"],
+    [50, 28, "check · 0 · free"],
+    [50, 28, "check · 0 · taken"],
+    [50, 67, "check · 1 · free"],
+    [50, 68, "check · 1 · taken"],
+    [50, 67, "check · 2 · free"],
+    [50, 68, "check · 2 · taken"],
+    [51, 51, "user · typedNothing"],
+    [51, 110, "user · typedAda"],
+    [51, 52, "user · typedGrace"],
+    [51, 51, "user · next"],
+    [51, 29, "check · 0 · free"],
+    [51, 29, "check · 0 · taken"],
+    [51, 46, "check · 1 · free"],
+    [51, 46, "check · 1 · taken"],
+    [51, 23, "check · 2 · free"],
+    [51, 23, "check · 2 · taken"],
+    [52, 111, "user · typedNothing"],
+    [52, 112, "user · typedAda"],
+    [52, 52, "user · typedGrace"],
+    [52, 52, "user · next"],
+    [52, 30, "check · 0 · free"],
+    [52, 30, "check · 0 · taken"],
+    [52, 113, "check · 1 · free"],
+    [52, 114, "check · 1 · taken"],
+    [52, 50, "check · 2 · free"],
+    [52, 50, "check · 2 · taken"],
+    [52, 115, "check · 3 · free"],
+    [52, 116, "check · 3 · taken"],
+    [53, 29, "user · typedNothing"],
+    [53, 53, "user · typedAda"],
+    [53, 30, "user · typedGrace"],
+    [53, 117, "user · next"],
+    [53, 48, "check · 0 · free"],
+    [53, 48, "check · 0 · taken"],
+    [53, 31, "check · 1 · free"],
+    [53, 32, "check · 1 · taken"],
+    [54, 29, "user · typedNothing"],
+    [54, 54, "user · typedAda"],
+    [54, 30, "user · typedGrace"],
+    [54, 54, "user · next"],
+    [54, 49, "check · 0 · free"],
+    [54, 49, "check · 0 · taken"],
+    [54, 31, "check · 1 · free"],
+    [54, 32, "check · 1 · taken"],
+    [55, 23, "user · typedNothing"],
+    [55, 55, "user · typedAda"],
+    [55, 50, "user · typedGrace"],
+    [55, 118, "user · next"],
+    [55, 31, "check · 0 · free"],
+    [55, 32, "check · 0 · taken"],
+    [55, 48, "check · 1 · free"],
+    [55, 48, "check · 1 · taken"],
+    [56, 23, "user · typedNothing"],
+    [56, 56, "user · typedAda"],
+    [56, 50, "user · typedGrace"],
+    [56, 56, "user · next"],
+    [56, 31, "check · 0 · free"],
+    [56, 32, "check · 0 · taken"],
+    [56, 49, "check · 1 · free"],
+    [56, 49, "check · 1 · taken"],
+    [57, 25, "user · back"],
+    [57, 57, "user · free"],
+    [57, 119, "user · pro"],
+    [57, 120, "user · next"],
+    [57, 33, "check · 0 · free"],
+    [57, 33, "check · 0 · taken"],
+    [58, 121, "user · back"],
+    [58, 27, "user · free"],
+    [58, 58, "user · pro"],
+    [58, 122, "user · next"],
+    [59, 27, "user · back"],
+    [59, 123, "user · submit"],
+    [60, 60, "user · typedNothing"],
+    [60, 61, "user · typedAda"],
+    [60, 124, "user · typedGrace"],
+    [60, 60, "user · next"],
+    [60, 10, "check · 0 · free"],
+    [60, 10, "check · 0 · taken"],
+    [60, 10, "check · 1 · free"],
+    [60, 10, "check · 1 · taken"],
+    [61, 125, "user · typedNothing"],
+    [61, 61, "user · typedAda"],
+    [61, 126, "user · typedGrace"],
+    [61, 61, "user · next"],
+    [61, 11, "check · 0 · free"],
+    [61, 11, "check · 0 · taken"],
+    [61, 11, "check · 1 · free"],
+    [61, 11, "check · 1 · taken"],
+    [61, 127, "check · 2 · free"],
+    [61, 128, "check · 2 · taken"],
+    [62, 10, "user · typedNothing"],
+    [62, 11, "user · typedAda"],
+    [62, 62, "user · typedGrace"],
+    [62, 129, "user · next"],
+    [62, 12, "check · 0 · free"],
+    [62, 13, "check · 0 · taken"],
+    [63, 10, "user · typedNothing"],
+    [63, 11, "user · typedAda"],
+    [63, 63, "user · typedGrace"],
+    [63, 63, "user · next"],
+    [63, 12, "check · 0 · free"],
+    [63, 13, "check · 0 · taken"],
+    [64, 130, "user · typedNothing"],
+    [64, 64, "user · typedAda"],
+    [64, 131, "user · typedGrace"],
+    [64, 64, "user · next"],
+    [64, 22, "check · 0 · free"],
+    [64, 22, "check · 0 · taken"],
+    [64, 53, "check · 1 · free"],
+    [64, 54, "check · 1 · taken"],
+    [64, 53, "check · 2 · free"],
+    [64, 54, "check · 2 · taken"],
+    [65, 65, "user · typedNothing"],
+    [65, 66, "user · typedAda"],
+    [65, 132, "user · typedGrace"],
+    [65, 65, "user · next"],
+    [65, 23, "check · 0 · free"],
+    [65, 23, "check · 0 · taken"],
+    [65, 60, "check · 1 · free"],
+    [65, 60, "check · 1 · taken"],
+    [65, 29, "check · 2 · free"],
+    [65, 29, "check · 2 · taken"],
+    [66, 133, "user · typedNothing"],
+    [66, 66, "user · typedAda"],
+    [66, 134, "user · typedGrace"],
+    [66, 66, "user · next"],
+    [66, 24, "check · 0 · free"],
+    [66, 24, "check · 0 · taken"],
+    [66, 135, "check · 1 · free"],
+    [66, 136, "check · 1 · taken"],
+    [66, 64, "check · 2 · free"],
+    [66, 64, "check · 2 · taken"],
+    [66, 137, "check · 3 · free"],
+    [66, 138, "check · 3 · taken"],
+    [67, 23, "user · typedNothing"],
+    [67, 24, "user · typedAda"],
+    [67, 67, "user · typedGrace"],
+    [67, 139, "user · next"],
+    [67, 62, "check · 0 · free"],
+    [67, 62, "check · 0 · taken"],
+    [67, 25, "check · 1 · free"],
+    [67, 26, "check · 1 · taken"],
+    [68, 23, "user · typedNothing"],
+    [68, 24, "user · typedAda"],
+    [68, 68, "user · typedGrace"],
+    [68, 68, "user · next"],
+    [68, 63, "check · 0 · free"],
+    [68, 63, "check · 0 · taken"],
+    [68, 25, "check · 1 · free"],
+    [68, 26, "check · 1 · taken"],
+    [69, 29, "user · typedNothing"],
+    [69, 64, "user · typedAda"],
+    [69, 69, "user · typedGrace"],
+    [69, 140, "user · next"],
+    [69, 25, "check · 0 · free"],
+    [69, 26, "check · 0 · taken"],
+    [69, 62, "check · 1 · free"],
+    [69, 62, "check · 1 · taken"],
+    [70, 29, "user · typedNothing"],
+    [70, 64, "user · typedAda"],
+    [70, 70, "user · typedGrace"],
+    [70, 70, "user · next"],
+    [70, 25, "check · 0 · free"],
+    [70, 26, "check · 0 · taken"],
+    [70, 63, "check · 1 · free"],
+    [70, 63, "check · 1 · taken"],
+    [71, 31, "user · back"],
+    [71, 71, "user · free"],
+    [71, 141, "user · pro"],
+    [71, 142, "user · next"],
+    [71, 27, "check · 0 · free"],
+    [71, 27, "check · 0 · taken"],
+    [72, 143, "user · back"],
+    [72, 33, "user · free"],
+    [72, 72, "user · pro"],
+    [72, 144, "user · next"],
+    [73, 33, "user · back"],
+    [73, 145, "user · submit"],
+    [74, 74, "user · typedNothing"],
+    [74, 146, "user · typedAda"],
+    [74, 75, "user · typedGrace"],
+    [74, 74, "user · next"],
+    [74, 14, "check · 0 · free"],
+    [74, 14, "check · 0 · taken"],
+    [74, 14, "check · 1 · free"],
+    [74, 14, "check · 1 · taken"],
+    [75, 147, "user · typedNothing"],
+    [75, 148, "user · typedAda"],
+    [75, 75, "user · typedGrace"],
+    [75, 75, "user · next"],
+    [75, 15, "check · 0 · free"],
+    [75, 15, "check · 0 · taken"],
+    [75, 15, "check · 1 · free"],
+    [75, 15, "check · 1 · taken"],
+    [75, 149, "check · 2 · free"],
+    [75, 150, "check · 2 · taken"],
+    [76, 14, "user · typedNothing"],
+    [76, 76, "user · typedAda"],
+    [76, 15, "user · typedGrace"],
+    [76, 151, "user · next"],
+    [76, 16, "check · 0 · free"],
+    [76, 17, "check · 0 · taken"],
+    [77, 14, "user · typedNothing"],
+    [77, 77, "user · typedAda"],
+    [77, 15, "user · typedGrace"],
+    [77, 77, "user · next"],
+    [77, 16, "check · 0 · free"],
+    [77, 17, "check · 0 · taken"],
+    [78, 152, "user · typedNothing"],
+    [78, 153, "user · typedAda"],
+    [78, 78, "user · typedGrace"],
+    [78, 78, "user · next"],
+    [78, 40, "check · 0 · free"],
+    [78, 40, "check · 0 · taken"],
+    [78, 95, "check · 1 · free"],
+    [78, 96, "check · 1 · taken"],
+    [78, 95, "check · 2 · free"],
+    [78, 96, "check · 2 · taken"],
+    [79, 79, "user · typedNothing"],
+    [79, 154, "user · typedAda"],
+    [79, 80, "user · typedGrace"],
+    [79, 79, "user · next"],
+    [79, 41, "check · 0 · free"],
+    [79, 41, "check · 0 · taken"],
+    [79, 74, "check · 1 · free"],
+    [79, 74, "check · 1 · taken"],
+    [79, 35, "check · 2 · free"],
+    [79, 35, "check · 2 · taken"],
+    [80, 155, "user · typedNothing"],
+    [80, 156, "user · typedAda"],
+    [80, 80, "user · typedGrace"],
+    [80, 80, "user · next"],
+    [80, 42, "check · 0 · free"],
+    [80, 42, "check · 0 · taken"],
+    [80, 157, "check · 1 · free"],
+    [80, 158, "check · 1 · taken"],
+    [80, 78, "check · 2 · free"],
+    [80, 78, "check · 2 · taken"],
+    [80, 159, "check · 3 · free"],
+    [80, 160, "check · 3 · taken"],
+    [81, 41, "user · typedNothing"],
+    [81, 81, "user · typedAda"],
+    [81, 42, "user · typedGrace"],
+    [81, 161, "user · next"],
+    [81, 76, "check · 0 · free"],
+    [81, 76, "check · 0 · taken"],
+    [81, 43, "check · 1 · free"],
+    [81, 44, "check · 1 · taken"],
+    [82, 41, "user · typedNothing"],
+    [82, 82, "user · typedAda"],
+    [82, 42, "user · typedGrace"],
+    [82, 82, "user · next"],
+    [82, 77, "check · 0 · free"],
+    [82, 77, "check · 0 · taken"],
+    [82, 43, "check · 1 · free"],
+    [82, 44, "check · 1 · taken"],
+    [83, 35, "user · typedNothing"],
+    [83, 83, "user · typedAda"],
+    [83, 78, "user · typedGrace"],
+    [83, 162, "user · next"],
+    [83, 43, "check · 0 · free"],
+    [83, 44, "check · 0 · taken"],
+    [83, 76, "check · 1 · free"],
+    [83, 76, "check · 1 · taken"],
+    [84, 35, "user · typedNothing"],
+    [84, 84, "user · typedAda"],
+    [84, 78, "user · typedGrace"],
+    [84, 84, "user · next"],
+    [84, 43, "check · 0 · free"],
+    [84, 44, "check · 0 · taken"],
+    [84, 77, "check · 1 · free"],
+    [84, 77, "check · 1 · taken"],
+    [85, 37, "user · back"],
+    [85, 163, "user · free"],
+    [85, 85, "user · pro"],
+    [85, 164, "user · next"],
+    [85, 45, "check · 0 · free"],
+    [85, 45, "check · 0 · taken"],
+    [86, 165, "user · back"],
+    [86, 86, "user · free"],
+    [86, 39, "user · pro"],
+    [86, 166, "user · next"],
+    [87, 39, "user · back"],
+    [87, 167, "user · submit"],
+    [88, 88, "user · typedNothing"],
+    [88, 89, "user · typedAda"],
+    [88, 168, "user · typedGrace"],
+    [88, 88, "user · next"],
+    [88, 18, "check · 0 · free"],
+    [88, 18, "check · 0 · taken"],
+    [88, 18, "check · 1 · free"],
+    [88, 18, "check · 1 · taken"],
+    [89, 169, "user · typedNothing"],
+    [89, 89, "user · typedAda"],
+    [89, 170, "user · typedGrace"],
+    [89, 89, "user · next"],
+    [89, 19, "check · 0 · free"],
+    [89, 19, "check · 0 · taken"],
+    [89, 19, "check · 1 · free"],
+    [89, 19, "check · 1 · taken"],
+    [89, 171, "check · 2 · free"],
+    [89, 172, "check · 2 · taken"],
+    [90, 18, "user · typedNothing"],
+    [90, 19, "user · typedAda"],
+    [90, 90, "user · typedGrace"],
+    [90, 173, "user · next"],
+    [90, 20, "check · 0 · free"],
+    [90, 21, "check · 0 · taken"],
+    [91, 18, "user · typedNothing"],
+    [91, 19, "user · typedAda"],
+    [91, 91, "user · typedGrace"],
+    [91, 91, "user · next"],
+    [91, 20, "check · 0 · free"],
+    [91, 21, "check · 0 · taken"],
+    [92, 174, "user · typedNothing"],
+    [92, 92, "user · typedAda"],
+    [92, 175, "user · typedGrace"],
+    [92, 92, "user · next"],
+    [92, 34, "check · 0 · free"],
+    [92, 34, "check · 0 · taken"],
+    [92, 81, "check · 1 · free"],
+    [92, 82, "check · 1 · taken"],
+    [92, 81, "check · 2 · free"],
+    [92, 82, "check · 2 · taken"],
+    [93, 93, "user · typedNothing"],
+    [93, 94, "user · typedAda"],
+    [93, 176, "user · typedGrace"],
+    [93, 93, "user · next"],
+    [93, 35, "check · 0 · free"],
+    [93, 35, "check · 0 · taken"],
+    [93, 88, "check · 1 · free"],
+    [93, 88, "check · 1 · taken"],
+    [93, 41, "check · 2 · free"],
+    [93, 41, "check · 2 · taken"],
+    [94, 177, "user · typedNothing"],
+    [94, 94, "user · typedAda"],
+    [94, 178, "user · typedGrace"],
+    [94, 94, "user · next"],
+    [94, 36, "check · 0 · free"],
+    [94, 36, "check · 0 · taken"],
+    [94, 179, "check · 1 · free"],
+    [94, 180, "check · 1 · taken"],
+    [94, 92, "check · 2 · free"],
+    [94, 92, "check · 2 · taken"],
+    [94, 181, "check · 3 · free"],
+    [94, 182, "check · 3 · taken"],
+    [95, 35, "user · typedNothing"],
+    [95, 36, "user · typedAda"],
+    [95, 95, "user · typedGrace"],
+    [95, 183, "user · next"],
+    [95, 90, "check · 0 · free"],
+    [95, 90, "check · 0 · taken"],
+    [95, 37, "check · 1 · free"],
+    [95, 38, "check · 1 · taken"],
+    [96, 35, "user · typedNothing"],
+    [96, 36, "user · typedAda"],
+    [96, 96, "user · typedGrace"],
+    [96, 96, "user · next"],
+    [96, 91, "check · 0 · free"],
+    [96, 91, "check · 0 · taken"],
+    [96, 37, "check · 1 · free"],
+    [96, 38, "check · 1 · taken"],
+    [97, 41, "user · typedNothing"],
+    [97, 92, "user · typedAda"],
+    [97, 97, "user · typedGrace"],
+    [97, 184, "user · next"],
+    [97, 37, "check · 0 · free"],
+    [97, 38, "check · 0 · taken"],
+    [97, 90, "check · 1 · free"],
+    [97, 90, "check · 1 · taken"],
+    [98, 41, "user · typedNothing"],
+    [98, 92, "user · typedAda"],
+    [98, 98, "user · typedGrace"],
+    [98, 98, "user · next"],
+    [98, 37, "check · 0 · free"],
+    [98, 38, "check · 0 · taken"],
+    [98, 91, "check · 1 · free"],
+    [98, 91, "check · 1 · taken"],
+    [99, 43, "user · back"],
+    [99, 185, "user · free"],
+    [99, 99, "user · pro"],
+    [99, 186, "user · next"],
+    [99, 39, "check · 0 · free"],
+    [99, 39, "check · 0 · taken"],
+    [100, 187, "user · back"],
+    [100, 100, "user · free"],
+    [100, 45, "user · pro"],
+    [100, 188, "user · next"],
+    [101, 45, "user · back"],
+    [101, 189, "user · submit"]
+  ]
+}

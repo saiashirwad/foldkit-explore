@@ -1,4 +1,12 @@
 export {
+  Snapshot,
+  decodeSnapshot,
+  diffSnapshots,
+  encodeSnapshot,
+  formatFindings,
+  snapshotOf,
+} from './baseline'
+export {
   type Found,
   type Violation,
   deadEnds,
