@@ -1,21 +1,22 @@
 import { click, expect, given, role, scene, text } from 'foldkit/scene'
-import { test } from 'vitest'
+import { expect as expectValue, test } from 'vitest'
 
 import * as Signup from '../signup/main'
 import { signupEnvironment } from '../signup/main.cases'
 import { makeCase, makeLab } from './lab'
 
-const lab = makeLab([
-  makeCase(
-    {
-      name: 'Signup',
-      start: Signup.init,
-      update: Signup.update,
-      view: Signup.view,
-    },
-    signupEnvironment,
-  ),
-])
+const signup = makeCase(
+  {
+    name: 'Signup',
+    Message: Signup.Message,
+    start: Signup.init,
+    update: Signup.update,
+    view: Signup.view,
+  },
+  signupEnvironment,
+)
+
+const lab = makeLab([signup])
 
 test('shows the states reached at the chosen depth', () => {
   scene(
@@ -32,7 +33,20 @@ test('pruning a state removes it', () => {
     given(lab.init().model),
     expect(text('S2')).toExist(),
     click(role('button', { name: 'Prune S2' })),
-    expect(role('button', { name: 'Restore pruned' })).toExist(),
+    expect(role('button', { name: 'Reset' })).toExist(),
     expect(text('Prune rule for your code')).toExist(),
   )
+})
+
+test('a click in a preview adds the state it leads to', () => {
+  const limits = { depth: 1, states: 100 }
+  const before = signup.run(limits, [])
+  const [first] = before.cards
+  const after = signup.run(limits, [
+    {
+      key: first?.key ?? '',
+      message: Signup.Message.UpdatedUsername({ value: 'zed' }),
+    },
+  ])
+  expectValue(after.total).toBe(before.total + 1)
 })

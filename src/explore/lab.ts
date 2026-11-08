@@ -10,15 +10,30 @@ import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 import { defineView } from 'foldkit/submodel'
 
-import { type Environment, type Limits, type Program, explore } from './explore'
+import { type Choices, fixture } from './choices'
+import {
+  type Environment,
+  type Limits,
+  type Move,
+  type Program,
+  type State,
+  defaultKey,
+  explore,
+  send,
+} from './explore'
+import { keyOf } from './key'
 
 // CASE
 
 // One program and environment, with their types erased for the picker.
 export type Case = Readonly<{
   name: string
-  run: (limits: Limits) => Result
+  run: (limits: Limits, clicks: ReadonlyArray<Click>) => Result
 }>
+
+// A Message the user fired by clicking inside a state's preview.
+const Click = Schema.Struct({ key: Schema.String, message: Schema.Unknown })
+type Click = typeof Click.Type
 
 type Result = Readonly<{
   cards: ReadonlyArray<Card>
@@ -29,12 +44,59 @@ type Result = Readonly<{
 type Card = Readonly<{
   key: string
   id: number
+  depth: number
   via: string
   commands: string
   render: (h: HtmlBuilder<Message>) => Html
 }>
 
 const STATES = 200
+
+// Adds what was clicked to the moves the environment already offers.
+const withClicks = <ProgramModel, ProgramMessage, Input>(
+  program: Program<ProgramModel, ProgramMessage, Input>,
+  environment: Environment<ProgramModel, ProgramMessage, Input>,
+  clicks: ReadonlyArray<Click>,
+): Environment<ProgramModel, ProgramMessage, Input> => {
+  const isMessage = Schema.is(program.Message)
+  const clicked = Array.reduce(
+    clicks,
+    new Map<string, Record<string, ProgramMessage>>(),
+    (byKey, click) => {
+      if (isMessage(click.message)) {
+        byKey.set(click.key, {
+          ...byKey.get(click.key),
+          [keyOf(click.message)]: click.message,
+        })
+      }
+      return byKey
+    },
+  )
+  const declared = environment.next
+  function* next(
+    state: State<ProgramModel, ProgramMessage, Input>,
+  ): Choices<Move<ProgramMessage>> {
+    const messages = clicked.get(
+      keyOf(environment.key?.(state) ?? defaultKey(state)),
+    )
+    if (messages === undefined) {
+      return declared === undefined
+        ? yield* fixture('moves', {})
+        : yield* declared(state)
+    }
+    const source =
+      declared === undefined
+        ? 'clicked'
+        : yield* fixture('source', {
+            declared: 'declared',
+            clicked: 'clicked',
+          })
+    return source === 'clicked' || declared === undefined
+      ? send(yield* fixture('click', messages))
+      : yield* declared(state)
+  }
+  return { ...environment, next }
+}
 
 export const makeCase = <ProgramModel, ProgramMessage, Input>(
   program: Program<ProgramModel, ProgramMessage, Input>,
@@ -43,8 +105,12 @@ export const makeCase = <ProgramModel, ProgramMessage, Input>(
   const view = defineView<ProgramModel, ProgramMessage>(program.view)
   return {
     name: program.name,
-    run: limits => {
-      const graph = explore(program, environment, limits)
+    run: (limits, clicks) => {
+      const graph = explore(
+        program,
+        withClicks(program, environment, clicks),
+        limits,
+      )
       return {
         total: graph.nodes.length,
         isComplete: graph.isComplete,
@@ -53,6 +119,7 @@ export const makeCase = <ProgramModel, ProgramMessage, Input>(
           node => ({
             key: node.key,
             id: node.id,
+            depth: node.depth,
             via: node.via.join(' · '),
             commands: Array.map(node.pending, command => command.name).join(
               ', ',
@@ -62,7 +129,12 @@ export const makeCase = <ProgramModel, ProgramMessage, Input>(
                 slotId: `state-${node.id}`,
                 model: node.model,
                 view,
-                toParentMessage: () => Message.IgnoredPreview(),
+                toParentMessage: message =>
+                  Message.InteractedWithState({
+                    key: node.key,
+                    depth: node.depth,
+                    message,
+                  }),
               }),
           }),
         ),
@@ -77,6 +149,7 @@ export const Model = Schema.Struct({
   program: Schema.String,
   depth: Schema.Number,
   pruned: Schema.Array(Schema.String),
+  clicks: Schema.Array(Click),
 })
 export type Model = typeof Model.Type
 
@@ -89,8 +162,12 @@ export const Message = defineMessageUnion({
   ClickedShallower: {},
   ClickedDeeper: {},
   ClickedPrune: { key: Schema.String },
-  ClickedUnprune: {},
-  IgnoredPreview: {},
+  ClickedReset: {},
+  InteractedWithState: {
+    key: Schema.String,
+    depth: Schema.Number,
+    message: Schema.Unknown,
+  },
 })
 export type Message = typeof Message.Type
 
@@ -157,15 +234,15 @@ const gridView = (
   program: string,
   depth: number,
   pruned: string,
+  clicks: ReadonlyArray<Click>,
   h: HtmlBuilder<Message>,
 ): Html => {
   const keys: ReadonlyArray<string> = JSON.parse(pruned)
   const current = caseOf(cases, program)
-  const result = current.run({
-    depth,
-    states: STATES,
-    exclude: new Set(keys),
-  })
+  const result = current.run(
+    { depth, states: STATES, exclude: new Set(keys) },
+    clicks,
+  )
   return h.div(
     [],
     [
@@ -205,10 +282,10 @@ const gridView = (
             ],
           ),
           h.span([h.Class('lab-count')], [countView(result, keys.length)]),
-          keys.length > 0
+          keys.length > 0 || clicks.length > 0
             ? h.button(
-                [h.Class('lab-quiet'), h.OnClick(Message.ClickedUnprune())],
-                ['Restore pruned'],
+                [h.Class('lab-quiet'), h.OnClick(Message.ClickedReset())],
+                ['Reset'],
               )
             : h.empty,
         ],
@@ -236,13 +313,14 @@ export const makeLab = (cases: Array.NonEmptyReadonlyArray<Case>) => {
       program: Array.headNonEmpty(cases).name,
       depth: 3,
       pruned: [],
+      clicks: [],
     },
   })
 
   const update = (model: Model, message: Message) =>
     Message.match<Update.Return<Model, Message>>(message, {
       SelectedProgram: ({ program }) => ({
-        model: { program, depth: model.depth, pruned: [] },
+        model: { program, depth: model.depth, pruned: [], clicks: [] },
       }),
       ClickedShallower: () => ({
         model: modifyFields(model, { depth: depth => Math.max(0, depth - 1) }),
@@ -257,10 +335,16 @@ export const makeLab = (cases: Array.NonEmptyReadonlyArray<Case>) => {
           pruned: pruned => Array.append(pruned, key),
         }),
       }),
-      ClickedUnprune: () => ({
+      ClickedReset: () => ({
         model: modifyFields(model, { pruned: () => [] }),
       }),
-      IgnoredPreview: () => ({ model }),
+      InteractedWithState: ({ key, depth, message }) => ({
+        model: modifyFields(model, {
+          // The clicked state may sit at the depth limit, so go one deeper.
+          depth: current => Math.min(MAX_DEPTH, Math.max(current, depth + 1)),
+          clicks: clicks => Array.append(clicks, { key, message }),
+        }),
+      }),
     })
 
   const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
@@ -273,6 +357,7 @@ export const makeLab = (cases: Array.NonEmptyReadonlyArray<Case>) => {
           model.program,
           model.depth,
           JSON.stringify(model.pruned),
+          model.clicks,
           h,
         ]),
       ],

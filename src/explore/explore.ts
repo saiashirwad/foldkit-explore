@@ -1,4 +1,4 @@
-import { Array } from 'effect'
+import { Array, type Schema } from 'effect'
 import type { Update } from 'foldkit'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 
@@ -9,6 +9,8 @@ import { keyOf } from './key'
 
 export type Program<Model, Message, Input = void> = Readonly<{
   name: string
+  // Lets the gallery tell a click's Message from any other value.
+  Message: Schema.Schema<Message>
   start: (input: Input) => Update.Return<Model, Message>
   update: (model: Model, message: Message) => Update.Return<Model, Message>
   view: (model: Model, h: HtmlBuilder<Message>) => Html
