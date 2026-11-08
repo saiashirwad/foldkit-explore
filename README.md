@@ -79,6 +79,16 @@ storyOf(graph, id)
 
 Returns a Foldkit `story` test that starts where the explorer started, makes each move on the way to that state (a Command answer becomes `Command.resolve`), and checks the Model it ends in. A story fails while Commands are pending, so any still pending at that state are listed with a TODO. Adjust the import path and run your formatter. The gallery shows it under "Test for this state" in the sidebar.
 
+## Baselines for CI
+
+```ts
+expectBaseline('src/signup/signup.states.json', snapshotOf(program, environment, limits))
+```
+
+`snapshotOf` records every explored state: what it shows (its text, and a hash of everything rendered), its pending Commands, and where each move leads. Commit the file. `expectBaseline` (in a vitest test) fails with the differences when the code no longer matches it, and no old code is needed. After an intended change, run `UPDATE_BASELINE=1 bun run test` and review the file's diff: it has one state or move per line. The Compare tab shows the same comparison, as "Baseline vs ...".
+
+A baseline only covers what its limits explored, and it only notices what a screen shows, not hidden Model changes.
+
 ## Comparing versions
 
 ```ts

@@ -1,3 +1,4 @@
+import { Schema } from 'effect'
 import { Runtime } from 'foldkit'
 
 import * as Weather from '../main'
@@ -5,6 +6,7 @@ import { weatherEnvironment } from '../main.cases'
 import * as Release from '../release/main'
 import { releaseEnvironment } from '../release/main.cases'
 import { signupEnvironment } from '../signup/main.cases'
+import signupStates from '../signup/signup.states.json'
 import {
   headingChanged,
   helperRefactor,
@@ -12,7 +14,15 @@ import {
   retryRemoved,
   staleResponses,
 } from '../signup/variants'
-import { makeCase, makeComparison, makeLab } from './lab'
+import { Snapshot } from './baseline'
+import {
+  makeBaselineComparison,
+  makeCase,
+  makeComparison,
+  makeLab,
+} from './lab'
+
+const signupBaseline = Schema.decodeUnknownSync(Snapshot)(signupStates)
 
 const lab = makeLab(
   [
@@ -38,9 +48,19 @@ const lab = makeLab(
       weatherEnvironment,
     ),
   ],
-  [headingChanged, retryRemoved, staleResponses, helperRefactor].map(after =>
-    makeComparison(after.name, original, after, signupEnvironment),
-  ),
+  [
+    ...[headingChanged, retryRemoved, staleResponses, helperRefactor].map(
+      after => makeComparison(after.name, original, after, signupEnvironment),
+    ),
+    ...[original, headingChanged].map(current =>
+      makeBaselineComparison(
+        `Baseline vs ${current === original ? 'current code' : current.name}`,
+        current,
+        signupEnvironment,
+        signupBaseline,
+      ),
+    ),
+  ],
 )
 
 Runtime.run(
