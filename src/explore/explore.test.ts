@@ -36,6 +36,7 @@ const Save = Command.define('Save', {
 
 const program: Program<Model, Message, number> = {
   name: 'Counter',
+  Message,
   start: (count): Update.Return<Model, Message> => ({
     model: { count, saved: false },
   }),

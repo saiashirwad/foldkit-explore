@@ -12,6 +12,7 @@ const lab = makeLab([
   makeCase(
     {
       name: 'Signup',
+      Message: Signup.Message,
       start: Signup.init,
       update: Signup.update,
       view: Signup.view,
@@ -21,6 +22,7 @@ const lab = makeLab([
   makeCase(
     {
       name: 'Release',
+      Message: Release.Message,
       start: Release.init,
       update: Release.update,
       view: Release.view,
@@ -30,6 +32,7 @@ const lab = makeLab([
   makeCase(
     {
       name: 'Weather',
+      Message: Weather.Message,
       start: Weather.start,
       update: Weather.update,
       view: (model, h) => Weather.view(model, h).body,

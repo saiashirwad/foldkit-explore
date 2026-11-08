@@ -18,6 +18,7 @@ type Model = Readonly<{ count: number }>
 
 const original: Program<Model, Message> = {
   name: 'Counter',
+  Message,
   start: (): Update.Return<Model, Message> => ({ model: { count: 0 } }),
   update: (model, message): Update.Return<Model, Message> =>
     Message.match<Update.Return<Model, Message>>(message, {
