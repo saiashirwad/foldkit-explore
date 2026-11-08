@@ -27,3 +27,4 @@ export {
   send,
 } from './explore'
 export { byScreen } from './screen'
+export { storyOf } from './story'

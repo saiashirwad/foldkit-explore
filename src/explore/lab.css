@@ -300,6 +300,23 @@
     color: var(--muted);
   }
 
+  .side-test {
+    margin-top: 16px;
+    font: 11px var(--mono);
+    color: var(--muted);
+  }
+
+  .side-test pre {
+    overflow: auto;
+    max-height: 320px;
+    margin: 6px 0 0;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--ink);
+  }
+
   .side-actions {
     display: flex;
     gap: 8px;

@@ -25,6 +25,7 @@ import {
 } from './explore'
 import { keyOf } from './key'
 import { byScreen, screenOf } from './screen'
+import { storyOf } from './story'
 
 // CASE
 
@@ -71,6 +72,8 @@ type Card = Readonly<{
   isDeadEnd: boolean
   via: string
   commands: string
+  // A Foldkit story test that reaches this state.
+  test: () => string | undefined
   // Where one move from here leads.
   moves: ReadonlyArray<Readonly<{ label: string; to: string }>>
   // `slot` is the card's home state, so a card keeps its place as it moves.
@@ -174,6 +177,7 @@ export const makeCase = <ProgramModel, ProgramMessage, Input>(
         isDeadEnd: ends.has(node.id),
         via: node.via.join(' · '),
         commands: Array.map(node.pending, command => command.name).join(', '),
+        test: () => storyOf(graph, node.id),
         moves: Array.dedupeWith(
           Array.flatMap(graph.edges, edge => {
             const target = graph.nodes[edge.to]
@@ -409,6 +413,14 @@ const sidebarView = (
                   ],
                 ),
               ),
+            ),
+        }),
+        Option.match(Option.fromNullishOr(card.test()), {
+          onNone: () => h.empty,
+          onSome: code =>
+            h.details(
+              [h.Class('side-test')],
+              [h.summary([], ['Test for this state']), h.pre([], [code])],
             ),
         }),
         h.div(

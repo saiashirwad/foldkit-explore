@@ -89,6 +89,14 @@ export const find = <Model, Message, Input>(
   }
 }
 
+// The `_tag` of a Message, when it has one.
+export const tagOf = (message: unknown): string | undefined => {
+  const tag = Predicate.hasProperty(message, '_tag')
+    ? Reflect.get(message, '_tag')
+    : undefined
+  return typeof tag === 'string' ? tag : undefined
+}
+
 // The `_tag` of each variant of a Message union.
 export const tagsOf = (message: Schema.Top): ReadonlyArray<string> =>
   Array.flatMap(
@@ -113,6 +121,6 @@ export const neverSent = <Model, Message, Input>(
   graph: Graph<Model, Message, Input>,
   tags: ReadonlyArray<string>,
 ): ReadonlyArray<string> => {
-  const sent = new Set(Array.map(graph.edges, edge => edge.tag))
+  const sent = new Set(Array.map(graph.edges, edge => tagOf(edge.move.message)))
   return Array.filter(tags, tag => !sent.has(tag))
 }

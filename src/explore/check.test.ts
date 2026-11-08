@@ -15,6 +15,7 @@ import {
   pendingRequests,
   send,
 } from './explore'
+import { storyOf } from './story'
 
 // A button starts a load. The buggy version shows the spinner but never asks
 // for the data.
@@ -123,4 +124,23 @@ test('neverSent lists the declared Messages no move sent', () => {
       tagsOf(Message),
     ),
   ).toEqual([])
+})
+
+test('storyOf writes a Foldkit story that replays the path', () => {
+  const graph = explore(makeProgram(false), environment, limits)
+  const done = graph.nodes.find(node => node.model.status === 'done')
+  const code = storyOf(graph, done?.id ?? -1) ?? ''
+  expect(code).toContain('given({\n      status: "idle"\n    })')
+  expect(code).toContain('message(Message.ClickedLoad())')
+  expect(code).toContain('Command.resolve(Load, Message.Loaded())')
+  expect(code).toContain('expect(model).toEqual({\n      status: "done"')
+  expect(code).not.toContain('TODO')
+})
+
+test('storyOf lists Commands still pending at the end', () => {
+  const graph = explore(makeProgram(false), environment, limits)
+  const loading = graph.nodes.find(node => node.model.status === 'loading')
+  const code = storyOf(graph, loading?.id ?? -1) ?? ''
+  expect(code).toContain('Command.expectHas(Load)')
+  expect(code).toContain('TODO')
 })

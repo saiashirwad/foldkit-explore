@@ -71,6 +71,14 @@ neverSent(graph, tagsOf(Message))
 
 To merge look-alike states while exploring, use `key: byScreen(program.view)`. The gallery has a toggle for it.
 
+## Turning a state into a test
+
+```ts
+storyOf(graph, id)
+```
+
+Returns a Foldkit `story` test that starts where the explorer started, makes each move on the way to that state (a Command answer becomes `Command.resolve`), and checks the Model it ends in. A story fails while Commands are pending, so any still pending at that state are listed with a TODO. Adjust the import path and run your formatter. The gallery shows it under "Test for this state" in the sidebar.
+
 ## Comparing versions
 
 ```ts
