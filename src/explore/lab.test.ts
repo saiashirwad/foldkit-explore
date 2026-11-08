@@ -3,7 +3,8 @@ import { expect as expectValue, test } from 'vitest'
 
 import * as Signup from '../signup/main'
 import { signupEnvironment } from '../signup/main.cases'
-import { Message, makeCase, makeLab } from './lab'
+import { headingChanged, original } from '../signup/variants'
+import { Message, makeCase, makeComparison, makeLab } from './lab'
 
 const signup = makeCase(
   {
@@ -61,4 +62,17 @@ test('reset clears pruned states and clicks', () => {
     pruned: [],
     clicks: [],
   })
+})
+
+test('compare mode lists the differences between two versions', () => {
+  const comparing = makeLab(
+    [signup],
+    [makeComparison('Heading', original, headingChanged, signupEnvironment)],
+  )
+  scene(
+    comparing,
+    given({ ...comparing.init().model, mode: 'Compare', depth: 6 }),
+    expect(role('list', { name: 'Differences' })).toExist(),
+    expect(text('Screen differs')).toExist(),
+  )
 })

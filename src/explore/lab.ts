@@ -11,6 +11,7 @@ import { modifyFields } from 'foldkit/struct'
 import { defineView } from 'foldkit/submodel'
 
 import { type Choices, fixture } from './choices'
+import { type Comparison, type Finding, compare } from './compare'
 import {
   type Environment,
   type Limits,
@@ -143,9 +144,29 @@ export const makeCase = <ProgramModel, ProgramMessage, Input>(
   }
 }
 
+// One pair of versions in one environment, with their types erased.
+export type ComparisonCase = Readonly<{
+  name: string
+  run: (limits: Limits) => Comparison
+}>
+
+export const makeComparison = <ProgramModel, ProgramMessage, Input>(
+  name: string,
+  before: Program<ProgramModel, ProgramMessage, Input>,
+  after: Program<ProgramModel, ProgramMessage, Input>,
+  environment: Environment<ProgramModel, ProgramMessage, Input>,
+): ComparisonCase => ({
+  name,
+  run: limits => compare(before, after, environment, limits),
+})
+
 // MODEL
 
+const Mode = Schema.Literals(['Explore', 'Compare'])
+
 export const Model = Schema.Struct({
+  mode: Mode,
+  comparison: Schema.String,
   program: Schema.String,
   depth: Schema.Number,
   pruned: Schema.Array(Schema.String),
@@ -158,6 +179,8 @@ const MAX_DEPTH = 8
 // MESSAGE
 
 export const Message = defineMessageUnion({
+  SelectedMode: { mode: Mode },
+  SelectedComparison: { comparison: Schema.String },
   SelectedProgram: { program: Schema.String },
   ClickedShallower: {},
   ClickedDeeper: {},
@@ -174,6 +197,7 @@ export type Message = typeof Message.Type
 // VIEW
 
 const lazy = createLazy()
+const lazyCompare = createLazy()
 
 const cardView = (card: Card, h: HtmlBuilder<Message>): Html =>
   h.article(
@@ -220,17 +244,77 @@ const countView = (result: Result, pruned: number): string =>
     ...(pruned > 0 ? [`${pruned} pruned`] : []),
   ].join(' · ')
 
-const caseOf = (
-  cases: Array.NonEmptyReadonlyArray<Case>,
-  program: string,
-): Case =>
+const nameOf = <Named extends Readonly<{ name: string }>>(
+  items: Array.NonEmptyReadonlyArray<Named>,
+  name: string,
+): Named =>
   Option.getOrElse(
-    Array.findFirst(cases, ({ name }) => name === program),
-    () => Array.headNonEmpty(cases),
+    Array.findFirst(items, item => item.name === name),
+    () => Array.headNonEmpty(items),
+  )
+
+const depthView = (depth: number, h: HtmlBuilder<Message>): Html =>
+  h.div(
+    [h.Class('lab-depth')],
+    [
+      h.span([], ['depth']),
+      h.button(
+        [
+          h.AriaLabel('Fewer steps'),
+          h.Disabled(depth === 0),
+          h.OnClick(Message.ClickedShallower()),
+        ],
+        ['−'],
+      ),
+      h.output([], [`${depth}`]),
+      h.button(
+        [
+          h.AriaLabel('More steps'),
+          h.Disabled(depth === MAX_DEPTH),
+          h.OnClick(Message.ClickedDeeper()),
+        ],
+        ['+'],
+      ),
+    ],
+  )
+
+const modeView = (
+  mode: typeof Mode.Type,
+  hasComparisons: boolean,
+  h: HtmlBuilder<Message>,
+): Html =>
+  hasComparisons
+    ? h.div(
+        [h.Class('lab-depth')],
+        Array.map(Mode.literals, option =>
+          h.button(
+            [
+              h.AriaPressed(option === mode ? 'true' : 'false'),
+              h.OnClick(Message.SelectedMode({ mode: option })),
+            ],
+            [option],
+          ),
+        ),
+      )
+    : h.empty
+
+const pickerView = (
+  label: string,
+  names: ReadonlyArray<string>,
+  selected: string,
+  toMessage: (name: string) => Message,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.select(
+    [h.AriaLabel(label), h.OnChange(toMessage)],
+    Array.map(names, name =>
+      h.option([h.Value(name), h.Selected(name === selected)], [name]),
+    ),
   )
 
 const gridView = (
   cases: Array.NonEmptyReadonlyArray<Case>,
+  hasComparisons: boolean,
   program: string,
   depth: number,
   pruned: string,
@@ -238,8 +322,7 @@ const gridView = (
   h: HtmlBuilder<Message>,
 ): Html => {
   const keys: ReadonlyArray<string> = JSON.parse(pruned)
-  const current = caseOf(cases, program)
-  const result = current.run(
+  const result = nameOf(cases, program).run(
     { depth, states: STATES, exclude: new Set(keys) },
     clicks,
   )
@@ -249,38 +332,15 @@ const gridView = (
       h.header(
         [h.Class('lab-header')],
         [
-          h.select(
-            [
-              h.AriaLabel('Program'),
-              h.OnChange(name => Message.SelectedProgram({ program: name })),
-            ],
-            Array.map(cases, ({ name }) =>
-              h.option([h.Value(name), h.Selected(name === program)], [name]),
-            ),
+          modeView('Explore', hasComparisons, h),
+          pickerView(
+            'Program',
+            Array.map(cases, ({ name }) => name),
+            program,
+            name => Message.SelectedProgram({ program: name }),
+            h,
           ),
-          h.div(
-            [h.Class('lab-depth')],
-            [
-              h.span([], ['depth']),
-              h.button(
-                [
-                  h.AriaLabel('Fewer steps'),
-                  h.Disabled(depth === 0),
-                  h.OnClick(Message.ClickedShallower()),
-                ],
-                ['−'],
-              ),
-              h.output([], [`${depth}`]),
-              h.button(
-                [
-                  h.AriaLabel('More steps'),
-                  h.Disabled(depth === MAX_DEPTH),
-                  h.OnClick(Message.ClickedDeeper()),
-                ],
-                ['+'],
-              ),
-            ],
-          ),
+          depthView(depth, h),
           h.span([h.Class('lab-count')], [countView(result, keys.length)]),
           keys.length > 0 || clicks.length > 0
             ? h.button(
@@ -307,9 +367,87 @@ const gridView = (
   )
 }
 
-export const makeLab = (cases: Array.NonEmptyReadonlyArray<Case>) => {
+const findingLabels: Readonly<Record<Finding['kind'], string>> = {
+  screen: 'Screen differs',
+  commands: 'Pending requests differ',
+  'only-before': 'Move removed',
+  'only-after': 'Move added',
+}
+
+const findingView = (finding: Finding, h: HtmlBuilder<Message>): Html =>
+  h.li(
+    [h.Class('finding')],
+    [
+      h.div(
+        [h.Class('finding-head')],
+        [
+          h.strong([], [findingLabels[finding.kind]]),
+          h.span([], [`× ${finding.count}`]),
+          h.span([h.Class('finding-path')], [finding.path.join(' › ')]),
+        ],
+      ),
+      finding.before === undefined
+        ? h.empty
+        : h.p([h.Class('finding-before')], [finding.before]),
+      finding.after === undefined
+        ? h.empty
+        : h.p([h.Class('finding-after')], [finding.after]),
+    ],
+  )
+
+const compareView = (
+  comparisons: Array.NonEmptyReadonlyArray<ComparisonCase>,
+  name: string,
+  depth: number,
+  h: HtmlBuilder<Message>,
+): Html => {
+  const result = nameOf(comparisons, name).run({ depth, states: STATES })
+  return h.div(
+    [],
+    [
+      h.header(
+        [h.Class('lab-header')],
+        [
+          modeView('Compare', true, h),
+          pickerView(
+            'Comparison',
+            Array.map(comparisons, comparison => comparison.name),
+            name,
+            comparison => Message.SelectedComparison({ comparison }),
+            h,
+          ),
+          depthView(depth, h),
+          h.span(
+            [h.Class('lab-count')],
+            [
+              `${result.pairs} pairs · ${result.findings.length} differences · ${result.isComplete ? 'complete' : 'cut off'}`,
+            ],
+          ),
+        ],
+      ),
+      h.ul(
+        [h.Class('findings'), h.AriaLabel('Differences')],
+        Array.map(result.findings, finding => findingView(finding, h)),
+      ),
+    ],
+  )
+}
+
+export const makeLab = (
+  cases: Array.NonEmptyReadonlyArray<Case>,
+  comparisons: ReadonlyArray<ComparisonCase> = [],
+) => {
+  const maybeComparisons = Array.match(comparisons, {
+    onEmpty: () => Option.none(),
+    onNonEmpty: nonEmpty => Option.some(nonEmpty),
+  })
   const init = (): Update.Return<Model, Message> => ({
     model: {
+      mode: 'Explore',
+      comparison: Option.match(maybeComparisons, {
+        onNone: () => '',
+        onSome: ([first]) => first.name,
+      }),
       program: Array.headNonEmpty(cases).name,
       depth: 3,
       pruned: [],
@@ -319,8 +457,18 @@ export const makeLab = (cases: Array.NonEmptyReadonlyArray<Case>) => {
 
   const update = (model: Model, message: Message) =>
     Message.match<Update.Return<Model, Message>>(message, {
+      SelectedMode: ({ mode }) => ({
+        model: modifyFields(model, { mode: () => mode }),
+      }),
+      SelectedComparison: ({ comparison }) => ({
+        model: modifyFields(model, { comparison: () => comparison }),
+      }),
       SelectedProgram: ({ program }) => ({
-        model: { program, depth: model.depth, pruned: [], clicks: [] },
+        model: modifyFields(model, {
+          program: () => program,
+          pruned: () => [],
+          clicks: () => [],
+        }),
       }),
       ClickedShallower: () => ({
         model: modifyFields(model, { depth: depth => Math.max(0, depth - 1) }),
@@ -347,19 +495,34 @@ export const makeLab = (cases: Array.NonEmptyReadonlyArray<Case>) => {
       }),
     })
 
+  const explored = (model: Model, h: HtmlBuilder<Message>): Html =>
+    lazy(gridView, [
+      cases,
+      comparisons.length > 0,
+      model.program,
+      model.depth,
+      JSON.stringify(model.pruned),
+      model.clicks,
+      h,
+    ])
+
   const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
-    title: caseOf(cases, model.program).name,
+    title: model.mode === 'Compare' ? 'Compare versions' : model.program,
     body: h.div(
       [h.Class('lab')],
       [
-        lazy(gridView, [
-          cases,
-          model.program,
-          model.depth,
-          JSON.stringify(model.pruned),
-          model.clicks,
-          h,
-        ]),
+        Option.match(maybeComparisons, {
+          onNone: () => explored(model, h),
+          onSome: nonEmpty =>
+            model.mode === 'Compare'
+              ? lazyCompare(compareView, [
+                  nonEmpty,
+                  model.comparison,
+                  model.depth,
+                  h,
+                ])
+              : explored(model, h),
+        }),
       ],
     ),
   })
