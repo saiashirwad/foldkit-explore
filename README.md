@@ -59,6 +59,18 @@ deadEnds(graph, limits.depth)
 
 `violations` returns the explored states where your rule fails, each with its shortest path. `deadEnds` returns states with no move to a different state; the gallery marks them. Some are fine, such as a finished signup. Both only cover what was explored.
 
+## Finding a state, and what was never exercised
+
+```ts
+find(program, environment, state => state.model.step._tag === 'Failed', { depth: 12, states: 3_000 })
+// { found: { path, model } | undefined, isComplete }
+neverSent(graph, tagsOf(Message))
+```
+
+`find` stops at the first state your rule accepts and returns the shortest path to it, so it can go much deeper than a full search. `isComplete` tells you whether a miss covers everything reachable. `neverSent` lists declared Messages that no explored move sent: either unreachable in this environment, or never offered by it. The gallery has both: a search box, and a "Messages never sent" note.
+
+To merge look-alike states while exploring, use `key: byScreen(program.view)`. The gallery has a toggle for it.
+
 ## Comparing versions
 
 ```ts

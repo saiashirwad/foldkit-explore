@@ -10,7 +10,7 @@ import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 import { defineView } from 'foldkit/submodel'
 
-import { deadEnds } from './check'
+import { deadEnds, find as findState, neverSent, tagsOf } from './check'
 import { type Choices, fixture } from './choices'
 import { type Finding, compare } from './compare'
 import {
@@ -24,13 +24,14 @@ import {
   send,
 } from './explore'
 import { keyOf } from './key'
-import { byScreen } from './screen'
+import { byScreen, screenOf } from './screen'
 
 // CASE
 
 // One program and environment, with their types erased for the picker.
 export type Case = Readonly<{
   name: string
+  find: (query: string, limits: Limits, isMerged: boolean) => FindResult
   run: (
     limits: Limits,
     clicks: ReadonlyArray<Click>,
@@ -42,7 +43,20 @@ export type Case = Readonly<{
 const Click = Schema.Struct({ key: Schema.String, message: Schema.Unknown })
 type Click = typeof Click.Type
 
+type FindResult = Readonly<{
+  // False when a miss may only mean the search was cut off.
+  isComplete: boolean
+  found: Option.Option<
+    Readonly<{
+      path: ReadonlyArray<string>
+      render: (h: HtmlBuilder<Message>) => Html
+    }>
+  >
+}>
+
 type Result = Readonly<{
+  // Declared Messages that no explored move sent.
+  neverSent: ReadonlyArray<string>
   cards: ReadonlyArray<Card>
   // Every state, including hidden ones, for a card that moves onto it.
   byKey: ReadonlyMap<string, Card>
@@ -116,15 +130,40 @@ export const makeCase = <ProgramModel, ProgramMessage, Input>(
   environment: Environment<ProgramModel, ProgramMessage, Input>,
 ): Case => {
   const view = defineView<ProgramModel, ProgramMessage>(program.view)
+  const tags = tagsOf(program.Message)
+  const environmentFor = (isMerged: boolean) =>
+    isMerged ? { ...environment, key: byScreen(program.view) } : environment
   return {
     name: program.name,
+    find: (query, limits, isMerged) => {
+      const needle = query.toLowerCase()
+      const result = findState(
+        program,
+        environmentFor(isMerged),
+        state =>
+          screenOf(program.view, state.model)
+            .text.toLowerCase()
+            .includes(needle),
+        limits,
+      )
+      return {
+        isComplete: result.isComplete,
+        found: Option.map(Option.fromNullishOr(result.found), found => ({
+          path: found.path,
+          render: h =>
+            h.submodel({
+              slotId: 'found',
+              model: found.model,
+              view,
+              toParentMessage: () => Message.IgnoredPreview(),
+            }),
+        })),
+      }
+    },
     run: (limits, clicks, isMerged) => {
-      const merged = isMerged
-        ? { ...environment, key: byScreen(program.view) }
-        : environment
       const graph = explore(
         program,
-        withClicks(program, merged, clicks),
+        withClicks(program, environmentFor(isMerged), clicks),
         limits,
       )
       const ends = new Set(deadEnds(graph, limits.depth).map(({ id }) => id))
@@ -160,6 +199,7 @@ export const makeCase = <ProgramModel, ProgramMessage, Input>(
           }),
       }))
       return {
+        neverSent: neverSent(graph, tags),
         total: graph.nodes.length,
         isComplete: graph.isComplete,
         cards: Array.filter(all, card => graph.nodes[card.id]?.shown === true),
@@ -248,10 +288,13 @@ export const Model = Schema.Struct({
   moved: Schema.Record(Schema.String, Schema.String),
   maybeSelected: Schema.Option(Schema.String),
   isMerged: Schema.Boolean,
+  search: Schema.String,
 })
 export type Model = typeof Model.Type
 
 const MAX_DEPTH = 8
+const FIND_DEPTH = 12
+const FIND_STATES = 3_000
 const COMPARE_DEPTH = 7
 // Comparing needs depth to reach a difference, so it explores more states.
 const COMPARE_STATES = 3_000
@@ -266,6 +309,7 @@ export const Message = defineMessageUnion({
   ClickedDeeper: {},
   ClickedPrune: { key: Schema.String },
   ToggledMerged: {},
+  ChangedSearch: { search: Schema.String },
   IgnoredPreview: {},
   ClickedCard: { slot: Schema.String },
   ClickedMove: { slot: Schema.String, to: Schema.String },
@@ -481,6 +525,37 @@ const pickerView = (
     ),
   )
 
+const findView = (
+  search: string,
+  result: FindResult,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.section(
+    [h.Class('lab-find'), h.AriaLabel('Search result')],
+    Option.match(result.found, {
+      onNone: () => [
+        h.p(
+          [],
+          [
+            result.isComplete
+              ? `No reachable screen contains "${search}".`
+              : `Not found within ${FIND_DEPTH} steps or ${FIND_STATES} states.`,
+          ],
+        ),
+      ],
+      onSome: found => [
+        h.p([], [`Found "${search}" in ${found.path.length - 1} steps:`]),
+        h.ol(
+          [h.Class('find-path')],
+          Array.map(found.path, step =>
+            h.li([], [step === '' ? 'start' : step]),
+          ),
+        ),
+        h.div([h.Class('state-preview')], [found.render(h)]),
+      ],
+    }),
+  )
+
 // The state a card shows: where it was moved to, or its home.
 const currentOf = (
   result: Result,
@@ -504,6 +579,7 @@ const gridView = (
   moved: Readonly<Record<string, string>>,
   maybeSelected: Option.Option<string>,
   isMerged: boolean,
+  search: string,
   h: HtmlBuilder<Message>,
 ): Html => {
   const keys: ReadonlyArray<string> = JSON.parse(pruned)
@@ -539,6 +615,14 @@ const gridView = (
             h,
           ),
           depthView(depth, h),
+          h.input([
+            h.Type('search'),
+            h.Class('lab-search'),
+            h.AriaLabel('Find a screen'),
+            h.Placeholder('Find a screen with text'),
+            h.Value(search),
+            h.OnChange(value => Message.ChangedSearch({ search: value })),
+          ]),
           h.button(
             [
               h.Class('lab-toggle'),
@@ -556,6 +640,26 @@ const gridView = (
             : h.empty,
         ],
       ),
+      search.trim() === ''
+        ? h.empty
+        : findView(
+            search,
+            nameOf(cases, program).find(
+              search.trim(),
+              { depth: FIND_DEPTH, states: FIND_STATES },
+              isMerged,
+            ),
+            h,
+          ),
+      result.neverSent.length > 0
+        ? h.details(
+            [h.Class('lab-rule')],
+            [
+              h.summary([], [`${result.neverSent.length} Messages never sent`]),
+              h.pre([], [result.neverSent.join('\n')]),
+            ],
+          )
+        : h.empty,
       keys.length > 0
         ? h.details(
             [h.Class('lab-rule')],
@@ -718,6 +822,7 @@ export const makeLab = (
       moved: {},
       maybeSelected: Option.none(),
       isMerged: false,
+      search: '',
     },
   })
 
@@ -737,6 +842,7 @@ export const makeLab = (
       SelectedProgram: ({ program }) => ({
         model: modifyFields(model, {
           program: () => program,
+          search: () => '',
           pruned: () => [],
           clicks: () => [],
           moved: () => ({}),
@@ -757,6 +863,9 @@ export const makeLab = (
         }),
       }),
       IgnoredPreview: () => ({ model }),
+      ChangedSearch: ({ search }) => ({
+        model: modifyFields(model, { search: () => search }),
+      }),
       // Keys change with the merge, so what was keyed by them is dropped.
       ToggledMerged: () => ({
         model: modifyFields(model, {
@@ -807,6 +916,7 @@ export const makeLab = (
       model.moved,
       model.maybeSelected,
       model.isMerged,
+      model.search,
       h,
     ])
 

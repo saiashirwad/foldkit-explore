@@ -71,6 +71,33 @@
     color: var(--accent);
   }
 
+  .lab-search {
+    width: 200px;
+    padding: 3px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font: inherit;
+  }
+
+  .lab-find {
+    margin: 12px 24px 0;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: white;
+  }
+
+  .lab-find p {
+    margin: 0 0 6px;
+  }
+
+  .find-path {
+    margin: 0 0 10px;
+    padding-left: 20px;
+    font: 11px var(--mono);
+    color: var(--muted);
+  }
+
   .lab-count {
     font: 11px var(--mono);
     color: var(--muted);

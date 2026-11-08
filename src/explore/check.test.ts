@@ -3,7 +3,7 @@ import { Command, type Update } from 'foldkit'
 import { defineMessageUnion } from 'foldkit/message'
 import { expect, test } from 'vitest'
 
-import { deadEnds, violations } from './check'
+import { deadEnds, find, neverSent, tagsOf, violations } from './check'
 import { type Choices, fixture } from './choices'
 import {
   type Environment,
@@ -95,4 +95,32 @@ test('a state at the depth limit is not a dead end', () => {
     states: 9,
   })
   expect(deadEnds(graph, 1)).toEqual([])
+})
+
+test('find returns the shortest path to the first matching state', () => {
+  const result = find(
+    makeProgram(false),
+    environment,
+    ({ model }) => model.status === 'done',
+    limits,
+  )
+  expect(result.found?.path).toEqual(['', 'user · load', 'reply · 0'])
+  expect(result.found?.model).toEqual({ status: 'done' })
+})
+
+test('find says whether a miss covers everything reachable', () => {
+  const result = find(makeProgram(false), environment, () => false, limits)
+  expect(result).toEqual({ found: undefined, isComplete: true })
+})
+
+test('neverSent lists the declared Messages no move sent', () => {
+  expect(tagsOf(Message)).toEqual(['ClickedLoad', 'Loaded'])
+  const graph = explore(makeProgram(true), environment, limits)
+  expect(neverSent(graph, tagsOf(Message))).toEqual(['Loaded'])
+  expect(
+    neverSent(
+      explore(makeProgram(false), environment, limits),
+      tagsOf(Message),
+    ),
+  ).toEqual([])
 })
