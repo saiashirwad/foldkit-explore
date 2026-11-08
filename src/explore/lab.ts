@@ -24,6 +24,7 @@ import {
   send,
 } from './explore'
 import { keyOf } from './key'
+import { screenOf } from './screen'
 
 // CASE
 
@@ -52,6 +53,8 @@ type Card = Readonly<{
   isDeadEnd: boolean
   via: string
   commands: string
+  // What the card looks like, so look-alikes can be told apart from the rest.
+  look: () => string
   // Where one move from here leads.
   moves: ReadonlyArray<Readonly<{ label: string; to: string }>>
   // `slot` is the card's home state, so a card keeps its place as it moves.
@@ -127,6 +130,7 @@ export const makeCase = <ProgramModel, ProgramMessage, Input>(
         isDeadEnd: ends.has(node.id),
         via: node.via.join(' · '),
         commands: Array.map(node.pending, command => command.name).join(', '),
+        look: () => screenOf(program.view, node.model).key,
         moves: Array.dedupeWith(
           Array.flatMap(graph.edges, edge => {
             const target = graph.nodes[edge.to]
@@ -191,6 +195,7 @@ export const Model = Schema.Struct({
   // Where each card has been moved to, by home key and target key.
   moved: Schema.Record(Schema.String, Schema.String),
   maybeSelected: Schema.Option(Schema.String),
+  isDeduped: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -208,6 +213,7 @@ export const Message = defineMessageUnion({
   ClickedShallower: {},
   ClickedDeeper: {},
   ClickedPrune: { key: Schema.String },
+  ToggledLookAlikes: {},
   ClickedCard: { slot: Schema.String },
   ClickedMove: { slot: Schema.String, to: Schema.String },
   ClickedHome: { slot: Schema.String },
@@ -345,9 +351,20 @@ const ruleOf = (keys: ReadonlyArray<string>): string =>
     'prune: state => pruned.has(keyOf(defaultKey(state))),',
   ].join('\n')
 
-const countView = (result: Result, pruned: number): string =>
+// Keeps the first card of each look: same screen and same pending requests.
+const withoutLookAlikes = (cards: ReadonlyArray<Card>): ReadonlyArray<Card> => {
+  const seen = new Set<string>()
+  return Array.filter(cards, card => {
+    const look = `${card.look()}|${card.commands}`
+    return seen.has(look) ? false : Boolean(seen.add(look))
+  })
+}
+
+const countView = (result: Result, pruned: number, shown: number): string =>
   [
-    `${result.total} states`,
+    shown === result.cards.length
+      ? `${result.total} states`
+      : `${shown} of ${result.total} states`,
     result.isComplete ? 'complete' : 'cut off',
     ...(pruned > 0 ? [`${pruned} pruned`] : []),
   ].join(' · ')
@@ -442,6 +459,7 @@ const gridView = (
   clicks: ReadonlyArray<Click>,
   moved: Readonly<Record<string, string>>,
   maybeSelected: Option.Option<string>,
+  isDeduped: boolean,
   h: HtmlBuilder<Message>,
 ): Html => {
   const keys: ReadonlyArray<string> = JSON.parse(pruned)
@@ -449,12 +467,13 @@ const gridView = (
     { depth, states: STATES, exclude: new Set(keys) },
     clicks,
   )
+  const cards = isDeduped ? withoutLookAlikes(result.cards) : result.cards
   // With nothing selected, the first card is.
   const maybeHome = Option.orElse(
     Option.flatMap(maybeSelected, key =>
-      Array.findFirst(result.cards, card => card.key === key),
+      Array.findFirst(cards, card => card.key === key),
     ),
-    () => Array.head(result.cards),
+    () => Array.head(cards),
   )
   const selected = Option.match(maybeHome, {
     onNone: () => undefined,
@@ -475,7 +494,18 @@ const gridView = (
             h,
           ),
           depthView(depth, h),
-          h.span([h.Class('lab-count')], [countView(result, keys.length)]),
+          h.button(
+            [
+              h.Class('lab-toggle'),
+              h.AriaPressed(isDeduped ? 'true' : 'false'),
+              h.OnClick(Message.ToggledLookAlikes()),
+            ],
+            ['Hide look-alikes'],
+          ),
+          h.span(
+            [h.Class('lab-count')],
+            [countView(result, keys.length, cards.length)],
+          ),
           keys.length > 0 || clicks.length > 0 || !Record.isEmptyRecord(moved)
             ? h.button(
                 [h.Class('lab-quiet'), h.OnClick(Message.ClickedReset())],
@@ -498,7 +528,7 @@ const gridView = (
         [
           h.section(
             [h.Class('lab-grid'), h.AriaLabel('States')],
-            Array.map(result.cards, home =>
+            Array.map(cards, home =>
               cardView(
                 home,
                 currentOf(result, moved, home),
@@ -614,6 +644,7 @@ export const makeLab = (
       clicks: [],
       moved: {},
       maybeSelected: Option.none(),
+      isDeduped: false,
     },
   })
 
@@ -651,6 +682,9 @@ export const makeLab = (
         model: modifyFields(model, {
           pruned: pruned => Array.append(pruned, key),
         }),
+      }),
+      ToggledLookAlikes: () => ({
+        model: modifyFields(model, { isDeduped: isDeduped => !isDeduped }),
       }),
       ClickedCard: ({ slot }) => ({
         model: modifyFields(model, { maybeSelected: () => Option.some(slot) }),
@@ -691,6 +725,7 @@ export const makeLab = (
       model.clicks,
       model.moved,
       model.maybeSelected,
+      model.isDeduped,
       h,
     ])
 
