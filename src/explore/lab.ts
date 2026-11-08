@@ -24,14 +24,18 @@ import {
   send,
 } from './explore'
 import { keyOf } from './key'
-import { screenOf } from './screen'
+import { byScreen } from './screen'
 
 // CASE
 
 // One program and environment, with their types erased for the picker.
 export type Case = Readonly<{
   name: string
-  run: (limits: Limits, clicks: ReadonlyArray<Click>) => Result
+  run: (
+    limits: Limits,
+    clicks: ReadonlyArray<Click>,
+    isMerged: boolean,
+  ) => Result
 }>
 
 // A Message the user fired by clicking inside a state's preview.
@@ -53,8 +57,6 @@ type Card = Readonly<{
   isDeadEnd: boolean
   via: string
   commands: string
-  // What the card looks like, so look-alikes can be told apart from the rest.
-  look: () => string
   // Where one move from here leads.
   moves: ReadonlyArray<Readonly<{ label: string; to: string }>>
   // `slot` is the card's home state, so a card keeps its place as it moves.
@@ -116,10 +118,13 @@ export const makeCase = <ProgramModel, ProgramMessage, Input>(
   const view = defineView<ProgramModel, ProgramMessage>(program.view)
   return {
     name: program.name,
-    run: (limits, clicks) => {
+    run: (limits, clicks, isMerged) => {
+      const merged = isMerged
+        ? { ...environment, key: byScreen(program.view) }
+        : environment
       const graph = explore(
         program,
-        withClicks(program, environment, clicks),
+        withClicks(program, merged, clicks),
         limits,
       )
       const ends = new Set(deadEnds(graph, limits.depth).map(({ id }) => id))
@@ -130,7 +135,6 @@ export const makeCase = <ProgramModel, ProgramMessage, Input>(
         isDeadEnd: ends.has(node.id),
         via: node.via.join(' · '),
         commands: Array.map(node.pending, command => command.name).join(', '),
-        look: () => screenOf(program.view, node.model).key,
         moves: Array.dedupeWith(
           Array.flatMap(graph.edges, edge => {
             const target = graph.nodes[edge.to]
@@ -243,7 +247,7 @@ export const Model = Schema.Struct({
   // Where each card has been moved to, by home key and target key.
   moved: Schema.Record(Schema.String, Schema.String),
   maybeSelected: Schema.Option(Schema.String),
-  isDeduped: Schema.Boolean,
+  isMerged: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -261,7 +265,7 @@ export const Message = defineMessageUnion({
   ClickedShallower: {},
   ClickedDeeper: {},
   ClickedPrune: { key: Schema.String },
-  ToggledLookAlikes: {},
+  ToggledMerged: {},
   IgnoredPreview: {},
   ClickedCard: { slot: Schema.String },
   ClickedMove: { slot: Schema.String, to: Schema.String },
@@ -388,32 +392,23 @@ const sidebarView = (
     }),
   )
 
-// NOTE: Pruned states are keyed by the default key, so the rule only matches
-// an environment that has not set its own `key`.
-const ruleOf = (keys: ReadonlyArray<string>): string =>
+// NOTE: Pruned states are keyed by the default key, or by screen when merged,
+// so the rule only matches an environment that has not set its own `key`.
+const ruleOf = (keys: ReadonlyArray<string>, isMerged: boolean): string =>
   [
     'const pruned = new Set([',
     ...Array.map(keys, key => `  ${JSON.stringify(key)},`),
     '])',
     '',
     '// in the Environment:',
-    'prune: state => pruned.has(keyOf(defaultKey(state))),',
+    isMerged
+      ? 'prune: state => pruned.has(keyOf(byScreen(program.view)(state))),'
+      : 'prune: state => pruned.has(keyOf(defaultKey(state))),',
   ].join('\n')
 
-// Keeps the first card of each look: same screen and same pending requests.
-const withoutLookAlikes = (cards: ReadonlyArray<Card>): ReadonlyArray<Card> => {
-  const seen = new Set<string>()
-  return Array.filter(cards, card => {
-    const look = `${card.look()}|${card.commands}`
-    return seen.has(look) ? false : Boolean(seen.add(look))
-  })
-}
-
-const countView = (result: Result, pruned: number, shown: number): string =>
+const countView = (result: Result, pruned: number): string =>
   [
-    shown === result.cards.length
-      ? `${result.total} states`
-      : `${shown} of ${result.total} states`,
+    `${result.total} states`,
     result.isComplete ? 'complete' : 'cut off',
     ...(pruned > 0 ? [`${pruned} pruned`] : []),
   ].join(' · ')
@@ -508,15 +503,16 @@ const gridView = (
   clicks: ReadonlyArray<Click>,
   moved: Readonly<Record<string, string>>,
   maybeSelected: Option.Option<string>,
-  isDeduped: boolean,
+  isMerged: boolean,
   h: HtmlBuilder<Message>,
 ): Html => {
   const keys: ReadonlyArray<string> = JSON.parse(pruned)
   const result = nameOf(cases, program).run(
     { depth, states: STATES, exclude: new Set(keys) },
     clicks,
+    isMerged,
   )
-  const cards = isDeduped ? withoutLookAlikes(result.cards) : result.cards
+  const { cards } = result
   // With nothing selected, the first card is.
   const maybeHome = Option.orElse(
     Option.flatMap(maybeSelected, key =>
@@ -546,15 +542,12 @@ const gridView = (
           h.button(
             [
               h.Class('lab-toggle'),
-              h.AriaPressed(isDeduped ? 'true' : 'false'),
-              h.OnClick(Message.ToggledLookAlikes()),
+              h.AriaPressed(isMerged ? 'true' : 'false'),
+              h.OnClick(Message.ToggledMerged()),
             ],
-            ['Hide look-alikes'],
+            ['Merge look-alikes'],
           ),
-          h.span(
-            [h.Class('lab-count')],
-            [countView(result, keys.length, cards.length)],
-          ),
+          h.span([h.Class('lab-count')], [countView(result, keys.length)]),
           keys.length > 0 || clicks.length > 0 || !Record.isEmptyRecord(moved)
             ? h.button(
                 [h.Class('lab-quiet'), h.OnClick(Message.ClickedReset())],
@@ -568,7 +561,7 @@ const gridView = (
             [h.Class('lab-rule')],
             [
               h.summary([], ['Prune rule for your code']),
-              h.pre([], [ruleOf(keys)]),
+              h.pre([], [ruleOf(keys, isMerged)]),
             ],
           )
         : h.empty,
@@ -724,7 +717,7 @@ export const makeLab = (
       clicks: [],
       moved: {},
       maybeSelected: Option.none(),
-      isDeduped: false,
+      isMerged: false,
     },
   })
 
@@ -764,8 +757,15 @@ export const makeLab = (
         }),
       }),
       IgnoredPreview: () => ({ model }),
-      ToggledLookAlikes: () => ({
-        model: modifyFields(model, { isDeduped: isDeduped => !isDeduped }),
+      // Keys change with the merge, so what was keyed by them is dropped.
+      ToggledMerged: () => ({
+        model: modifyFields(model, {
+          isMerged: isMerged => !isMerged,
+          pruned: () => [],
+          clicks: () => [],
+          moved: () => ({}),
+          maybeSelected: () => Option.none(),
+        }),
       }),
       ClickedCard: ({ slot }) => ({
         model: modifyFields(model, { maybeSelected: () => Option.some(slot) }),
@@ -806,7 +806,7 @@ export const makeLab = (
       model.clicks,
       model.moved,
       model.maybeSelected,
-      model.isDeduped,
+      model.isMerged,
       h,
     ])
 

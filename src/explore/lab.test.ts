@@ -52,14 +52,18 @@ test('picking a move in the sidebar sends the selected card there', () => {
 
 test('a click in a preview adds the state it leads to', () => {
   const limits = { depth: 1, states: 100 }
-  const before = signup.run(limits, [])
+  const before = signup.run(limits, [], false)
   const [first] = before.cards
-  const after = signup.run(limits, [
-    {
-      key: first?.key ?? '',
-      message: Signup.Message.UpdatedUsername({ value: 'zed' }),
-    },
-  ])
+  const after = signup.run(
+    limits,
+    [
+      {
+        key: first?.key ?? '',
+        message: Signup.Message.UpdatedUsername({ value: 'zed' }),
+      },
+    ],
+    false,
+  )
   expectValue(after.total).toBe(before.total + 1)
 })
 
@@ -89,7 +93,7 @@ test('compare mode lists the differences between two versions', () => {
 })
 
 test('a card lists where each move leads and can move there and back', () => {
-  const [home] = signup.run({ depth: 1, states: 100 }, []).cards
+  const [home] = signup.run({ depth: 1, states: 100 }, [], false).cards
   const [first] = home?.moves ?? []
   expectValue(first?.label).toBe('user · typedAda')
   const moved = lab.update(
@@ -115,15 +119,11 @@ test('an empty comparison says whether the search finished', () => {
   )
 })
 
-test('hiding look-alikes keeps one card per look', () => {
-  scene(
-    lab,
-    given({ ...lab.init().model, depth: 2, isDeduped: true }),
-    expect(text(' of ', { exact: false })).toExist(),
-  )
-  scene(
-    lab,
-    given({ ...lab.init().model, depth: 2, isDeduped: false }),
-    expect(text(' of ', { exact: false })).toBeAbsent(),
-  )
+test('merging look-alikes explores fewer states', () => {
+  const limits = { depth: 3, states: 200 }
+  const apart = signup.run(limits, [], false)
+  const together = signup.run(limits, [], true)
+  expectValue(together.total).toBeLessThan(apart.total)
+  // Merging is a bigger saving at depth: the cap is hit later.
+  expectValue(together.isComplete || !apart.isComplete).toBe(true)
 })

@@ -2,6 +2,7 @@ import { Array } from 'effect'
 import type { Html, HtmlBuilder } from 'foldkit/html'
 import * as Scene from 'foldkit/scene'
 
+import type { State } from './explore'
 import { keyOf } from './key'
 
 export type Screen = Readonly<{
@@ -51,3 +52,14 @@ export const screenOf = <Model, Message>(
   )
   return screens[0] ?? { text: '', key: '' }
 }
+
+// A merge key for `Environment.key`: states that render the same screen with
+// the same pending requests are one state, however they got there.
+export const byScreen =
+  <Model, Message, Input>(
+    view: (model: Model, h: HtmlBuilder<Message>) => Html,
+  ) =>
+  (state: State<Model, Message, Input>): unknown => [
+    screenOf(view, state.model).key,
+    Array.map(state.pending, command => [command.name, command.args ?? {}]),
+  ]
