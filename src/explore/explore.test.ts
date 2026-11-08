@@ -11,10 +11,12 @@ import {
   type Program,
   type State,
   answer,
+  defaultKey,
   explore,
   pendingRequests,
   send,
 } from './explore'
+import { keyOf } from './key'
 
 // A counter that can also save its value; saving is a pending Command.
 
@@ -131,4 +133,23 @@ test('excluded keys behave like pruned states', () => {
     exclude: new Set(second ? [second.key] : []),
   })
   expect(without.nodes.length).toBeLessThan(full.nodes.length)
+})
+
+test('the exported prune rule matches excluding the same states', () => {
+  const full = explore(program, environment, { depth: 2, states: 100 })
+  const second = full.nodes[1]
+  const pruned = new Set(second ? [second.key] : [])
+  const byRule = explore(
+    program,
+    { ...environment, prune: state => pruned.has(keyOf(defaultKey(state))) },
+    { depth: 2, states: 100 },
+  )
+  const byExclude = explore(program, environment, {
+    depth: 2,
+    states: 100,
+    exclude: pruned,
+  })
+  expect(byRule.nodes.map(node => node.key)).toEqual(
+    byExclude.nodes.map(node => node.key),
+  )
 })

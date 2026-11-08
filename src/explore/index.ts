@@ -1,4 +1,5 @@
 export { type Choices, fixture, outcomes } from './choices'
+export { keyOf } from './key'
 export {
   type Edge,
   type Environment,
@@ -9,6 +10,7 @@ export {
   type Program,
   type State,
   answer,
+  defaultKey,
   explore,
   pendingRequests,
   send,

@@ -109,6 +109,15 @@ export type Graph<Model, Message, Input = void> = Readonly<{
   isComplete: boolean
 }>
 
+// The key states merge on unless the environment sets its own.
+export const defaultKey = <Model, Message, Input>(
+  state: State<Model, Message, Input>,
+): unknown => [
+  state.input,
+  state.model,
+  Array.map(state.pending, command => [command.name, command.args ?? {}]),
+]
+
 const issued = <Message>(
   result: Update.Return<unknown, Message>,
 ): Update.Commands<Message> => result.commands ?? []
@@ -158,13 +167,7 @@ export const explore = <Model, Message, Input>(
     if (environment.prune?.(next)) {
       return
     }
-    const key = keyOf(
-      environment.key?.(next) ?? [
-        next.input,
-        next.model,
-        Array.map(next.pending, command => [command.name, command.args ?? {}]),
-      ],
-    )
+    const key = keyOf(environment.key?.(next) ?? defaultKey(next))
     if (limits.exclude?.has(key)) {
       return
     }
