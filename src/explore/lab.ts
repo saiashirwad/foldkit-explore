@@ -12,7 +12,7 @@ import { defineView } from 'foldkit/submodel'
 
 import { deadEnds } from './check'
 import { type Choices, fixture } from './choices'
-import { type Comparison, type Finding, compare } from './compare'
+import { type Finding, compare } from './compare'
 import {
   type Environment,
   type Limits,
@@ -165,10 +165,25 @@ export const makeCase = <ProgramModel, ProgramMessage, Input>(
   }
 }
 
+type FindingView = Readonly<{
+  finding: Finding
+  // Both versions' screens at the state where the difference shows.
+  render?: Readonly<{
+    before: (h: HtmlBuilder<Message>) => Html
+    after: (h: HtmlBuilder<Message>) => Html
+  }>
+}>
+
+type ComparisonResult = Readonly<{
+  findings: ReadonlyArray<FindingView>
+  pairs: number
+  isComplete: boolean
+}>
+
 // One pair of versions in one environment, with their types erased.
 export type ComparisonCase = Readonly<{
   name: string
-  run: (limits: Limits) => Comparison
+  run: (limits: Limits) => ComparisonResult
 }>
 
 export const makeComparison = <ProgramModel, ProgramMessage, Input>(
@@ -176,10 +191,43 @@ export const makeComparison = <ProgramModel, ProgramMessage, Input>(
   before: Program<ProgramModel, ProgramMessage, Input>,
   after: Program<ProgramModel, ProgramMessage, Input>,
   environment: Environment<ProgramModel, ProgramMessage, Input>,
-): ComparisonCase => ({
-  name,
-  run: limits => compare(before, after, environment, limits),
-})
+): ComparisonCase => {
+  const viewBefore = defineView<ProgramModel, ProgramMessage>(before.view)
+  const viewAfter = defineView<ProgramModel, ProgramMessage>(after.view)
+  return {
+    name,
+    run: limits => {
+      const result = compare(before, after, environment, limits)
+      return {
+        ...result,
+        findings: Array.map(result.findings, (finding, index): FindingView => {
+          const { states } = finding
+          return states === undefined
+            ? { finding }
+            : {
+                finding,
+                render: {
+                  before: h =>
+                    h.submodel({
+                      slotId: `finding-${index}-before`,
+                      model: states.before,
+                      view: viewBefore,
+                      toParentMessage: () => Message.IgnoredPreview(),
+                    }),
+                  after: h =>
+                    h.submodel({
+                      slotId: `finding-${index}-after`,
+                      model: states.after,
+                      view: viewAfter,
+                      toParentMessage: () => Message.IgnoredPreview(),
+                    }),
+                },
+              }
+        }),
+      }
+    },
+  }
+}
 
 // MODEL
 
@@ -214,6 +262,7 @@ export const Message = defineMessageUnion({
   ClickedDeeper: {},
   ClickedPrune: { key: Schema.String },
   ToggledLookAlikes: {},
+  IgnoredPreview: {},
   ClickedCard: { slot: Schema.String },
   ClickedMove: { slot: Schema.String, to: Schema.String },
   ClickedHome: { slot: Schema.String },
@@ -551,7 +600,19 @@ const findingLabels: Readonly<Record<Finding['kind'], string>> = {
   'only-after': 'Move added',
 }
 
-const findingView = (finding: Finding, h: HtmlBuilder<Message>): Html =>
+const findingNote = (finding: Finding): string | undefined =>
+  finding.kind === 'commands'
+    ? `Pending requests: ${finding.before || 'none'} → ${finding.after || 'none'}`
+    : finding.kind === 'only-before'
+      ? `Only the old version offers the move "${finding.before}".`
+      : finding.kind === 'only-after'
+        ? `Only the new version offers the move "${finding.after}".`
+        : undefined
+
+const findingView = (
+  { finding, render }: FindingView,
+  h: HtmlBuilder<Message>,
+): Html =>
   h.li(
     [h.Class('finding')],
     [
@@ -563,12 +624,31 @@ const findingView = (finding: Finding, h: HtmlBuilder<Message>): Html =>
           h.span([h.Class('finding-path')], [finding.path.join(' › ')]),
         ],
       ),
-      finding.before === undefined
+      Option.match(Option.fromNullishOr(findingNote(finding)), {
+        onNone: () => h.empty,
+        onSome: note => h.p([h.Class('finding-note')], [note]),
+      }),
+      render === undefined
         ? h.empty
-        : h.p([h.Class('finding-before')], [finding.before]),
-      finding.after === undefined
-        ? h.empty
-        : h.p([h.Class('finding-after')], [finding.after]),
+        : h.div(
+            [h.Class('finding-pair')],
+            [
+              h.figure(
+                [h.Class('finding-before')],
+                [
+                  h.figcaption([], ['Before']),
+                  h.div([h.Class('state-preview')], [render.before(h)]),
+                ],
+              ),
+              h.figure(
+                [h.Class('finding-after')],
+                [
+                  h.figcaption([], ['After']),
+                  h.div([h.Class('state-preview')], [render.after(h)]),
+                ],
+              ),
+            ],
+          ),
     ],
   )
 
@@ -683,6 +763,7 @@ export const makeLab = (
           pruned: pruned => Array.append(pruned, key),
         }),
       }),
+      IgnoredPreview: () => ({ model }),
       ToggledLookAlikes: () => ({
         model: modifyFields(model, { isDeduped: isDeduped => !isDeduped }),
       }),

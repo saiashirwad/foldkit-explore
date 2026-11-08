@@ -10,19 +10,21 @@ import {
 import { keyOf } from './key'
 import { screenOf } from './screen'
 
-export type Finding = Readonly<{
+export type Finding<Model = unknown> = Readonly<{
   kind: 'screen' | 'commands' | 'only-before' | 'only-after'
   // What each side shows. Moves only one side offers have one side.
   before?: string
   after?: string
+  // The pair of states where it shows. Absent when the starts differ.
+  states?: Readonly<{ before: Model; after: Model }>
   // How many pairs of states show this difference.
   count: number
   // The shortest way to reach one: the choices made at each step.
   path: ReadonlyArray<string>
 }>
 
-export type Comparison = Readonly<{
-  findings: ReadonlyArray<Finding>
+export type Comparison<Model = unknown> = Readonly<{
+  findings: ReadonlyArray<Finding<Model>>
   pairs: number
   // False when either side was cut off. No findings then is not equivalence.
   isComplete: boolean
@@ -53,13 +55,16 @@ export const compare = <Model, Message, Input>(
   after: Program<Model, Message, Input>,
   environment: Environment<Model, Message, Input>,
   limits: Limits,
-): Comparison => {
+): Comparison<Model> => {
   const left = explore(before, environment, limits)
   const right = explore(after, environment, limits)
   const leftEdges = outgoing(left)
   const rightEdges = outgoing(right)
-  const groups = new Map<string, Finding>()
-  const note = (finding: Omit<Finding, 'count'>, identity: unknown): void => {
+  const groups = new Map<string, Finding<Model>>()
+  const note = (
+    finding: Omit<Finding<Model>, 'count'>,
+    identity: unknown,
+  ): void => {
     const id = keyOf([finding.kind, identity])
     const known = groups.get(id)
     groups.set(id, { ...(known ?? finding), count: (known?.count ?? 0) + 1 })
@@ -74,14 +79,25 @@ export const compare = <Model, Message, Input>(
     rightId: number | undefined,
     path: ReadonlyArray<string>,
     move: string,
+    states?: Finding<Model>['states'],
   ): void => {
     const next = Array.append(path, move)
     if (leftId === undefined || rightId === undefined) {
       const text = `${move}`
       note(
         leftId === undefined
-          ? { kind: 'only-after', after: text, path: next }
-          : { kind: 'only-before', before: text, path: next },
+          ? {
+              kind: 'only-after',
+              after: text,
+              path: next,
+              ...(states && { states }),
+            }
+          : {
+              kind: 'only-before',
+              before: text,
+              path: next,
+              ...(states && { states }),
+            },
         [text, leftId === undefined],
       )
       return
@@ -111,28 +127,32 @@ export const compare = <Model, Message, Input>(
     if (a === undefined || b === undefined) {
       continue
     }
-    const screens = [
-      screenOf(before.view, a.model),
-      screenOf(after.view, b.model),
-    ]
-    const [x, y] = screens
-    if (x !== undefined && y !== undefined && x.key !== y.key) {
+    const states = { before: a.model, after: b.model }
+    const x = screenOf(before.view, a.model)
+    const y = screenOf(after.view, b.model)
+    if (x.key !== y.key) {
       note(
-        { kind: 'screen', before: x.text, after: y.text, path: current.path },
+        {
+          kind: 'screen',
+          before: x.text,
+          after: y.text,
+          states,
+          path: current.path,
+        },
         [x.key, y.key],
       )
     }
     const [c, d] = [commandsOf(a.pending), commandsOf(b.pending)]
     if (c !== d) {
-      note({ kind: 'commands', before: c, after: d, path: current.path }, [
-        c,
-        d,
-      ])
+      note(
+        { kind: 'commands', before: c, after: d, states, path: current.path },
+        [c, d],
+      )
     }
     const moves = new Map(leftEdges.get(a.id))
     const others = new Map(rightEdges.get(b.id))
     for (const move of new Set([...moves.keys(), ...others.keys()])) {
-      pair(moves.get(move), others.get(move), current.path, move)
+      pair(moves.get(move), others.get(move), current.path, move, states)
     }
   }
   return {
