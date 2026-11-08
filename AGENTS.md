@@ -12,113 +12,48 @@ subtree_prompted: false
 
 ### What this is
 
-Foldkit Explore shows reachable states of a Foldkit program within a declared environment and explicit limits. It also compares two program versions under one shared environment. It began as Branch Lab, a React prototype (`~/code/eva-idea`) in which a component's case generator yielded named choices (`fixture()`) and a replay search rendered every combination. Here the same choice language drives a real Elm-style program. Because `update` is pure and Models are plain data, the lab steps states directly instead of replaying them. It explores _time_ (moves and Command answers) as well as setup, and works toward model checking for UIs.
+Foldkit Explore shows the states a Foldkit program can reach. It began as Branch Lab, a React prototype where a generator yielded named choices (`fixture()`) and a replay rendered every combination. Here the same choice language drives a real Elm-style program: `update` is pure and Models are plain data, so the explorer steps states directly and explores _time_ (moves and Command answers) as well as setup.
 
-The person driving this reads every line. Keep changes small, idiomatic and easy to review. Ask before changing a direction that has already been settled.
+The person driving this reads every line. Keep changes small and easy to review. Ask before changing a direction that has already been settled. The generator form for choices is settled; keep it.
 
 ### Run
 
 ```sh
-bun dev                 # open /lab.html (index.html is the plain weather app)
-bun run test            # vitest; rewrites src/lab/*.atlas when called with -u
+bun dev            # open /lab.html (index.html is the plain weather app)
+bun run test       # vitest
 bun run typecheck
-bun run lint            # oxlint with the Foldkit plugin; its rules are strict and right
-bun run check:analysis  # JSON CheckReport; non-complete/unexercised/error is nonzero
-bun run test:browser    # locked Playwright Chromium; install browser first
-bunx oxfmt src          # format
+bun run lint       # oxlint with the Foldkit plugin; its rules are strict and right
+bunx oxfmt src     # format
 ```
 
-### Vocabulary
+### Shape
 
-- **fixture**: `yield* fixture('name', { option: value })`. A named choice. Control flow decides whether a fixture is reached, and an empty fixture prunes its path.
-- **Choices<T>**: a generator of fixtures that returns a `T`. `outcomes()` is an unbounded convenience generator of `{ decisions, value }`; bounded engines consume `enumerate()` checkpoints instead. Each checkpoint advances replay or one sibling cursor, including pruned paths.
-- **Program<Model, Message, Input = void>**: the application's `name`, Model and Message codecs, pure `start(input)`, `update`, and `view`. The program owns initialization and initial Commands. Properties and environment choices do not belong on Program.
-- **Environment<Model, Message, Input = void>**: `starts(): Choices<Input>`, optional finite view `inputs`, and optional `next`. Starting choices return inputs, never preconstructed Models or setup objects.
-- **NextState**: current Model, pending Commands, original `input`, and semantic-keyed view-derived `interactions` (empty without an `inputs` domain). Carry starting choices that affect future environment behavior in `input`.
-- **next**: `(state: NextState<Model, Message, Input>) => Choices<Transition<Message>>`. It describes one possible next step, not a whole scenario. Empty fixtures prune paths; early returns produce transitions.
-- **Move / Answer**: `send(message)` preserves the pending queue; `answer(request, message)` consumes exactly the selected occurrence. Both use the real update. `pendingRequests(state, CommandDefinition)` supplies typed occurrences as a record for a fixture. Scheduling restrictions belong in the environment.
-- **Atlas** (`src/lab/atlas.ts`): one program/environment pair's memoized execution graph, constructed with `make(program, environment, { properties?, limits? })`.
-- **Observation**: structured `screen`, available `actions` with separate semantic keys and readable labels, and all pending Command descriptions. `atlas.observe(id)` exposes it.
-- **Comparison**: fresh breadth-first paired exploration of before and after Programs under one Environment, with grouped findings, concrete examples, replayable traces, and explicit incomplete status.
-- **State id**: `S1`, `S2`… in discovery order. Only valid within one atlas session; comparison execution and pair ids are likewise local.
-- **Address**: compact navigation hops from a start to a state: kind, decisions, and an encoded Message on every transition. The lab's Model stores addresses, never atlas ids. `resolve/resolveSteps` replay only selected decisions with typed divergence, hop/work limits and cancellation; legacy label-only transitions are rejected. Navigation is not a portable certificate.
-- **Card / slot / home**: a card is a slot in the grid. Its home is its original state; it can be moved to other states. A pin is an extra slot.
+See `README.md`. `src/explore/` is the library: `fixture` and `outcomes`, `explore`, and the gallery. Everything else is example programs.
 
-### Layout
+- Exploration is breadth first. States merge on a stable key of input, Model and pending Commands, or on `Environment.key`.
+- Choices are replayed from the start for each path, so they must be pure.
+- Commands never execute. `answer` consumes one occurrence, then runs the real `update`.
+- `Environment.next` offers moves explicitly. Nothing is derived from the view.
+- The gallery computes the graph in its view, memoized by `createLazy`. The `states` cap keeps that cheap. Move it to a Command if the cap rises.
 
-| Path | Role |
-| --- | --- |
-| `src/lab/fixture.ts` | `fixture`, lazy `outcomes`, `Decision` schema |
-| `src/lab/identity.ts` | Hash-consing: equal execution values share canonical references |
-| `src/lab/replay.ts` | Shared total replay allowances, cancellation and typed divergence |
-| `src/lab/evidence.ts`, `src/lab/evidence-data.ts` | Portable versioned native evidence and lossless tagged data codec |
-| `src/lab/canonical.ts` | Stable data keys for encoded Messages, Commands, and observations |
-| `src/lab/atlas.ts` | Program/Environment contracts, transitions, bounded exploration, properties, addresses, and text snapshots |
-| `src/lab/interactions.ts`, `src/lab/observation.ts` | Public Scene probing, structured screens, semantic action keys, and pending Command descriptions |
-| `src/lab/compare.ts` | Fresh before/after execution, event matching, grouped findings, limits, and replay |
-| `src/lab/analysis-runner.ts`, `src/lab/analysis-data.ts` | Effect-owned sessions, work chunks and immutable UI snapshot schemas |
-| `src/lab/lab.ts`, `src/lab/review.ts` | The gallery and comparison review Foldkit programs |
-| `src/lab/lab.css` | Lab styles inside `@layer components` |
-| `src/lab/entry.ts`, `lab.html` | Lab page, with devtools off |
-| `src/programs.ts`, `src/comparisons.ts` | Typed program/environment objects, atlas instances, and comparison examples |
-| `src/main.cases.ts`, `src/release/main.cases.ts`, `src/signup/main.cases.ts` | Starting inputs and next-step environments |
-| `src/signup/properties.ts`, `src/signup/variants.ts` | Signup invariants and deliberate comparison variants |
-| `src/lab/*.atlas` | Fixed-depth behavior snapshots; changes to execution context or explored prefixes affect their diffs |
+### Conventions
 
-### How exploration works
-
-- **Initialization.** Environment starts yield Input. The real `program.start(input)` supplies Model and optional Commands; both are present at depth zero. Weather exports a pure `start(zipCodeInput)` and delegates runtime initialization to it. Release and Signup expose their existing pure `init` as Program.start.
-- **Exploration.** `reach(depth, search?, limitsOverride?)` supports breadth-first, depth-first, and 32 deterministic random walks. Successors come only from `environment.next(state)`. Signup offers every matching pending occurrence. Scene-derived interactions are an optional choice source, not a separate exploration path. Depth-first revisits shorter paths; random traversal can leave starts or branches unsampled. `check` always uses breadth-first paths.
-- **Merging.** Atlas identity is `identity.of([input, model, pending names and args])`. One atlas owns one fixed environment. Keeping Input in identity prevents equal current states with different future context from merging. Screen grouping is separate and never discards those executions. Comparison execution identity also retains the initial choice path.
-- **Execution data.** Identity and canonical evidence accept acyclic primitives (not functions/symbols), dense ordinary arrays, plain/null-prototype records, and installed Effect Options. Own non-enumerable data participates; accessors, symbol fields, sparse/decorated arrays, decorated Options, and custom objects/Equal implementations fail with a path. Identity deep-freezes data before caching, including inputs before `start`; pending queues and Command envelopes are shallow-frozen without traversing effects. Shared frozen references are not rescanned. Programs must not observe alias/reference identity, proxy traps, mutable prototypes, or descriptor writability/configurability. Execution equality preserves property order, enumerability, and supported prototypes; canonical matching/replay intentionally normalizes those record details. There is no custom execution abstraction; visual grouping is separate.
-- **Live clicks.** `atlas.interact(id, message)` validates with the program Message schema and records an encoded `Event` hop. The exported `send(message)` still constructs an environment Move; it is not an atlas method.
-- **Limits.** `make` defaults to `{ states: 5_000, transitions: 50_000, enumerationWork: 1_000_000 }`. Enumeration work is distinct from completed alternatives and includes replay advances, sibling selection/exhaustion, and the completion probe. Both `reach` overrides and bounded `successors(id, limitsOverride?)` use absolute allowances, not an additional budget per call. A direct successor probe includes its source state in its local state count.
-- **Work accounting.** `reach().counters.transitions` counts all enumerated starting and next-step alternatives, even ones that merge. `counters.starts` is the starting subset; `counters.states` is the returned execution count. Sources retain checkpointed iterators, cumulative work per yielded outcome, and prepared arrivals. Atlas recharges retained prefixes against each run's absolute enumeration allowance; Comparison accumulates the same checkpoint categories across resume. Resumption does not drop lookahead or reapply a buffered update.
-- **Status.** `reach().status` is `complete`, `depth-limit`, `state-limit`, `transition-limit`, or `enumeration-limit`. Exact work exhaustion can conservatively remain limited until another iterator step establishes completion. `unfinishedWork` reports unresolved starts, execution frontiers, and buffered arrivals; it does not estimate unknown generator cardinality.
-- **UI execution.** `makeLab` owns fresh Atlas sessions; registrations are templates, not shared mutable gallery state. Views and updates never explore, resolve, check or replay. Commands advance 128 checkpoints after an Effect scheduling sleep and publish immutable schema-defined snapshots/progress. Run IDs reject stale results. Each mode owns one Effect scope/session; reset, switch, cancel and mode exit dispose it. Static resource Layer finalizers close remaining sessions at runtime shutdown. Comparison depth increases reuse its session; decreases start fresh. Saved gallery Addresses replay inside Commands after session replacement. `Completed` is completion of bounded work, not a pass; `Cancelled`, `InvalidModel` and `Defect` are distinct.
-- **Property reports.** Properties require stable unique IDs and an actual predicate. `check/checkSteps` return a frozen versioned `CheckReport` carrying their exact BFS coverage/limits/frontier/edges, shortest violations by ID, separate state/transition counts, explicit applicability witnesses, and errors. Empty/limited/unexercised/error reports are never a Boolean pass. Optional `stateApplies`/`transitionApplies` describe applicability; the fourth transition argument contains actual issuance and selected request occurrence. Comparison preserves shared baseline failures and groups by ID. `model-error` check coverage retains the admitted prefix; ordinary `reach` still throws modeling failures.
-- **Passive reads.** `knownSuccessors(id)` never expands a source. `successorStatus(id)` distinguishes unseen, partial, and complete alternatives. `describe` and bounded property checking must not eagerly finish successor generators. The UI renders snapshot data only; bounded inspector probing is part of a declared analysis Command.
-- **Replay evidence.** Atlas `evidence(state, identity)` exports the first-discovery trace without exploring; `replayAddressSteps` records a selected path including self-loops. `replayEvidence/replayEvidenceSteps` verify in an owned fresh Atlas and dispose it. Version-1 artifacts require explicit program/environment and input/Model/Message encoding IDs, contain raw/encoded data, initial/issued/pending Commands, selected occurrence and observations, and never include session-local IDs. The native tagged codec preserves the execution-data domain including absent/undefined, Option and signed zero; it is not Quint ITF. IDs are caller assertions, not a source loader/hash. Application Message codecs must round-trip semantic values; Event evidence also requires their own data representation to round-trip.
-- **Scheduling cost.** Checkpoints cover selected replay, property checking, grouping and snapshot assembly. Replay defaults to 1,000 hops including Start and 1,000,000 total iterator advances including completion probes; options carry hop/work overrides and an AbortSignal. Comparison uses its enumeration-work allowance as default replay work, also charging fully pruned counterpart-absence checks. Closing replay iterators cancels and releases generators. Single application/codec/fixture-width operations, JSON/schema validation and final snapshot validation remain non-preemptible; these are not wall-clock/memory limits.
-- **Cost.** Limits bound admitted states, yielded alternatives, and enumeration checkpoints, not process memory or arbitrary generator computation time. A fixture still collects its option names at its width; sibling paths are allocated incrementally. `outcomes()` is unbounded; cooperative runners must consume `enumerate()` directly and close it on disposal. Caches persist across searches and live interactions. Identity cost is proportional to objects update replaced, each at its own width. A changed 10,000-element array is still rescanned. Do not claim O(change).
-
-### How comparison works
-
-`compare({ before, after, environment, properties?, limits })` takes two Programs with compatible Input and Message types/encodings and one Environment that can handle both Model types. It constructs fresh executions; never compare mutable gallery atlases or share their live interaction history.
-
-- Limits require `depth`, `states` per side, and `transitions`; `pairs` is optional and defaults to `states`. Status adds `pair-limit`. Total work counts each shared start once and each side's next-step alternatives separately.
-- `resume(limits)` retains iterators and buffered work. All limits must be nondecreasing; start a fresh comparison for smaller limits. `createComparison` is unstarted (`running`); `advance(checkpoints)` performs bounded work and `setLimits` changes nondecreasing bounds without executing search. The UI registers cases through `makeComparisonCase`, with separate session creation and pure preview rendering.
-- Match Moves by canonical encoded Message. Match Answers by Command name/arguments, occurrence among identical requests, and encoded response. DOM indexes and readable labels are not event identities. Reject duplicate semantic keys in one execution's environment.
-- Compare structured screen content, actions, pending Commands, newly issued Commands, available events, and properties. A different Model alone is not a UI finding. Keep concrete examples and shortest explored traces within grouped findings.
-- An unmatched event is applied on the side that offers it and its real successor is recorded. That branch stops immediately; never invent or explore a fake counterpart. Finish both event enumerations before declaring a missing event.
-- `replay(trace, replayOptions?)` restarts both programs and directly replays recorded fixture decisions, then checks recorded events and evidence. Initial Commands and observations matter at depth zero; total replay work also bounds counterpart-absence enumeration.
-- No findings in an incomplete search is not equivalence. Complete always means complete for the declared environment and supported observations, not a liveness or universal UI proof.
-
-### Conventions beyond FOLDKIT.md
-
-- **Validation.** CI pins Bun 1.4.0/Node 24.19.0, installs from the frozen lockfile, and runs tests/lint/the declared compiler/build plus a separate real Chromium smoke. `finite-oracle.ts` must remain independent of production identity/enumeration/traversal/matching. Persist seeds and keep explicit protocol fixtures small. `joinOperations` counts physical event-map probes, not transitions or fixture work; do not optimize away logical paired-edge property checks. `check:analysis` exits 0 only for a complete exercised report; 1 counterexample, 2 incomplete, 3 error, 4 unexercised. Artifacts preserve tagged report data. Quantitative cross-checks wait for #11's metric API.
-- **No type assertions.** Lint forbids `as`. `fixture` is typed by looking the replayed value up among its own cases. `pendingRequests` uses a localized name-based type predicate to recover a definition's typed arguments, relying on unique Command names within a program (Foldkit's matching contract).
-- **Effect v4 specifics:**
-  - `Hash.combine` is curried only.
-  - `Predicate.isObject` excludes arrays.
-  - `Array.filterMap` takes a `Result`; use `Array.getSomes` for Options.
-  - `Array.modify` returns an `Option`.
-- **Lazy views.** `createKeyedLazy` slots and the view functions passed to them live at module scope, and the arguments must be primitives or stable references. Otherwise the memo never hits; `caseView` takes `slot`, `home` and `state` for this reason.
-- **`Got*` naming.** `Got*` Messages are reserved for typed Submodels. A case's Message is untyped, so the lab uses `InteractedWithCase`.
-- **Styling.** The lab chrome must never restyle a program's view. All lab CSS sits in `@layer components`, below Tailwind utilities. The one deliberate exception is the unlayered `.case-preview > * { min-height: 0 }`, so page-sized views take their natural height in cards.
-- **Design direction (from the user).** One clean top bar: program picker, filters, count, search (BFS/DFS/Random), depth, Reset. No brand, no devtools overlay. Preview frames show only application views, with a neutral Inspect button outside each frame. State ids, execution counts, traces, and Command answers live in the inspector; aggregate counts stay in the top bar. Prefer removing UI over adding it.
+- **No type assertions.** Lint forbids `as`. `fixture` finds its value among its own cases. `pendingRequests` uses a name-based type predicate, relying on unique Command names within a program.
+- **`Got*` naming** is reserved for typed Submodels.
+- **Lazy views.** `createLazy` view functions live at module scope and take primitives or stable references.
+- **Styling.** Lab CSS sits in `@layer components` and never styles inside `.state-preview`.
+- **Effect v4:** `Hash.combine` is curried only; `Predicate.isObject` excludes arrays; `Array.filterMap` takes a `Result`, so use `Array.getSomes` for Options.
 
 ### Known issues
 
-- View-driven environments use the public Scene driver to record Messages from enabled buttons and configured text inputs. This is a limited probe, not universal interaction introspection; Mount-backed views are unsupported. Other examples choose explicit Messages in `next`.
+- Previews are inert: clicking inside a state does nothing.
 - The Weather view hard-codes `id="location"`, so several Weather cards trigger Foldkit's duplicate-id warning.
-- A state's address is the trace by which it was first found. If a live click discovers a state before breadth-first search does, its address goes through an `Event` hop. It still resolves.
-- Command definitions don't expose their declared `messages` or argument schemas. Answers are validated against the program Message schema, not a per-Command result schema. The modeled environment must describe realistic responses; unique Command names are required. Interrupts and subscriptions are not automatically modeled.
+- Command definitions don't expose their declared `messages` or argument schemas, so an answer is not checked against its Command.
+- Interrupts and subscriptions are not modeled.
 
-### Directions discussed
+### Directions
 
-- **Additional invariants** such as dead buttons, dead ends, and stuck spinners. Typed state/transition properties and shortest explored counterexamples already exist; these extra properties are not automatically implemented.
-- **Comparison across commits.** The paired Program comparison engine exists; automatic repository-version loading and CI review policy remain separate work.
-- **Computed accessibility or screenshot observations.** Structured rendered markup is available now; computed accessibility trees, browser layout, and screenshots are not part of the comparison contract.
-- **Pairwise coverage** across environment axes (viewport, locale, long strings) using a priority order.
-- **Quint conformance**: replay Quint ITF traces through the UI. See `~/research-ideas.md`.
+- Add Foldkit's Block API once it is stable. The core needs only `start`, `update` and `view`, so an adapter should be thin.
+- Export a UI prune as a code rule.
+- Temporal properties: dead ends, stuck spinners.
+- Version comparison under one environment (removed in the simplification; see git history).
