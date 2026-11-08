@@ -76,3 +76,30 @@ test('compare mode lists the differences between two versions', () => {
     expect(text('Screen differs')).toExist(),
   )
 })
+
+test('a card lists where each move leads and can move there and back', () => {
+  const [home] = signup.run({ depth: 1, states: 100 }, []).cards
+  const [first] = home?.moves ?? []
+  expectValue(first?.label).toBe('user · typedAda')
+  const moved = lab.update(
+    lab.init().model,
+    Message.ClickedMove({ slot: home?.key ?? '', to: first?.to ?? '' }),
+  ).model
+  expectValue(moved.moved).toEqual({ [home?.key ?? '']: first?.to })
+  expectValue(
+    lab.update(moved, Message.ClickedHome({ slot: home?.key ?? '' })).model
+      .moved,
+  ).toEqual({})
+})
+
+test('an empty comparison says whether the search finished', () => {
+  const comparing = makeLab(
+    [signup],
+    [makeComparison('Same', original, original, signupEnvironment)],
+  )
+  scene(
+    comparing,
+    given({ ...comparing.init().model, mode: 'Compare', depth: 1 }),
+    expect(text('No differences found yet', { exact: false })).toExist(),
+  )
+})
