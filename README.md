@@ -50,6 +50,15 @@ const graph = explore(program, environment, { depth: 3, states: 200 })
 
 The gallery has the same controls: step depth, and prune a state with its button to drop it and everything reachable only through it.
 
+## Checks
+
+```ts
+violations(graph, state => state.model.status !== 'loading' || state.pending.length > 0)
+deadEnds(graph, limits.depth)
+```
+
+`violations` returns the explored states where your rule fails, each with its shortest path. `deadEnds` returns states with no move to a different state; the gallery marks them. Some are fine, such as a finished signup. Both only cover what was explored.
+
 ## Comparing versions
 
 ```ts
@@ -64,6 +73,7 @@ Both versions run in the same environment. States are paired by the choices that
 | --- | --- |
 | `src/explore/choices.ts` | `fixture`, `outcomes` |
 | `src/explore/explore.ts` | `Program`, `Environment`, `explore` |
+| `src/explore/check.ts` | `violations`, `deadEnds` |
 | `src/explore/compare.ts`, `screen.ts` | compare two versions in one environment |
 | `src/explore/key.ts` | stable key for plain data |
 | `src/explore/lab.ts` | the gallery |

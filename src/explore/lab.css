@@ -162,6 +162,10 @@
     flex: 1;
   }
 
+  .state-end {
+    color: #b45309;
+  }
+
   .state-commands {
     font: 11px var(--mono);
     color: var(--muted);

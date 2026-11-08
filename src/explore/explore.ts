@@ -86,7 +86,8 @@ export type Node<Model, Message, Input = void> = State<Model, Message, Input> &
     id: number
     key: string
     depth: number
-    // The fixture options that led here from its first-found parent.
+    // The state it was first found from, and the fixture options that led here.
+    parent: number | undefined
     via: ReadonlyArray<string>
     shown: boolean
   }>
@@ -186,6 +187,7 @@ export const explore = <Model, Message, Input>(
         id,
         key,
         depth: from === undefined ? 0 : from.depth + 1,
+        parent: from?.id,
         via,
         shown: environment.show?.(next) ?? true,
       })

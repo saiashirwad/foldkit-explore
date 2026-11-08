@@ -1,3 +1,4 @@
+export { type Violation, deadEnds, violations } from './check'
 export { type Comparison, type Finding, compare } from './compare'
 export { type Choices, fixture, outcomes } from './choices'
 export { keyOf } from './key'

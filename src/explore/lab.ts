@@ -10,6 +10,7 @@ import { defineMessageUnion } from 'foldkit/message'
 import { modifyFields } from 'foldkit/struct'
 import { defineView } from 'foldkit/submodel'
 
+import { deadEnds } from './check'
 import { type Choices, fixture } from './choices'
 import { type Comparison, type Finding, compare } from './compare'
 import {
@@ -46,6 +47,7 @@ type Card = Readonly<{
   key: string
   id: number
   depth: number
+  isDeadEnd: boolean
   via: string
   commands: string
   render: (h: HtmlBuilder<Message>) => Html
@@ -112,6 +114,7 @@ export const makeCase = <ProgramModel, ProgramMessage, Input>(
         withClicks(program, environment, clicks),
         limits,
       )
+      const ends = new Set(deadEnds(graph, limits.depth).map(({ id }) => id))
       return {
         total: graph.nodes.length,
         isComplete: graph.isComplete,
@@ -121,6 +124,7 @@ export const makeCase = <ProgramModel, ProgramMessage, Input>(
             key: node.key,
             id: node.id,
             depth: node.depth,
+            isDeadEnd: ends.has(node.id),
             via: node.via.join(' · '),
             commands: Array.map(node.pending, command => command.name).join(
               ', ',
@@ -208,6 +212,9 @@ const cardView = (card: Card, h: HtmlBuilder<Message>): Html =>
         [
           h.span([h.Class('state-id')], [`S${card.id + 1}`]),
           h.span([h.Class('state-via')], [card.via]),
+          card.isDeadEnd
+            ? h.span([h.Class('state-end')], ['dead end'])
+            : h.empty,
           h.button(
             [
               h.Class('lab-quiet'),
