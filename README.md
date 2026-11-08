@@ -50,12 +50,21 @@ const graph = explore(program, environment, { depth: 3, states: 200 })
 
 The gallery has the same controls: step depth, and prune a state with its button to drop it and everything reachable only through it.
 
+## Comparing versions
+
+```ts
+const { findings, isComplete } = compare(before, after, environment, { depth: 3, states: 200 })
+```
+
+Both versions run in the same environment. States are paired by the choices that led to them. Each finding is a different screen, different pending Commands, or a move only one version offers. Findings are grouped, with a count and the shortest path. If `isComplete` is false, no findings is not equivalence.
+
 ## Layout
 
 | Path | Role |
 | --- | --- |
 | `src/explore/choices.ts` | `fixture`, `outcomes` |
 | `src/explore/explore.ts` | `Program`, `Environment`, `explore` |
+| `src/explore/compare.ts`, `screen.ts` | compare two versions in one environment |
 | `src/explore/key.ts` | stable key for plain data |
 | `src/explore/lab.ts` | the gallery |
 | `src/main.ts`, `src/release/`, `src/signup/` | example programs and their `main.cases.ts` environments |
