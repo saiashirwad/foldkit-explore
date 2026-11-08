@@ -190,6 +190,7 @@ export const Model = Schema.Struct({
   clicks: Schema.Array(Click),
   // Where each card has been moved to, by home key and target key.
   moved: Schema.Record(Schema.String, Schema.String),
+  maybeSelected: Schema.Option(Schema.String),
 })
 export type Model = typeof Model.Type
 
@@ -207,6 +208,7 @@ export const Message = defineMessageUnion({
   ClickedShallower: {},
   ClickedDeeper: {},
   ClickedPrune: { key: Schema.String },
+  ClickedCard: { slot: Schema.String },
   ClickedMove: { slot: Schema.String, to: Schema.String },
   ClickedHome: { slot: Schema.String },
   ClickedReset: {},
@@ -226,61 +228,109 @@ const lazyCompare = createLazy()
 const cardView = (
   home: Card,
   card: Card,
-  byKey: ReadonlyMap<string, Card>,
+  isSelected: boolean,
   h: HtmlBuilder<Message>,
 ): Html =>
   h.keyed('article')(
     `${home.id}`,
-    [h.Class('state')],
+    [h.Class(isSelected ? 'state is-selected' : 'state')],
     [
-      h.div(
-        [h.Class('state-head')],
+      h.button(
+        [
+          h.Class('state-head'),
+          h.AriaPressed(isSelected ? 'true' : 'false'),
+          h.AriaLabel(`Select S${card.id + 1}`),
+          h.OnClick(Message.ClickedCard({ slot: home.key })),
+        ],
         [
           h.span([h.Class('state-id')], [`S${card.id + 1}`]),
           h.span([h.Class('state-via')], [card.via]),
           card.isDeadEnd
             ? h.span([h.Class('state-end')], ['dead end'])
             : h.empty,
-          card === home
-            ? h.empty
-            : h.button(
-                [
-                  h.Class('lab-quiet'),
-                  h.AriaLabel(`Move S${home.id + 1} back home`),
-                  h.OnClick(Message.ClickedHome({ slot: home.key })),
-                ],
-                [`↺ S${home.id + 1}`],
-              ),
-          h.button(
-            [
-              h.Class('lab-quiet'),
-              h.AriaLabel(`Prune S${card.id + 1}`),
-              h.OnClick(Message.ClickedPrune({ key: card.key })),
-            ],
-            ['Prune'],
-          ),
         ],
       ),
       h.div([h.Class('state-preview')], [card.render(home.id, h)]),
-      card.commands === ''
-        ? h.empty
-        : h.p([h.Class('state-commands')], [`pending: ${card.commands}`]),
-      h.div(
-        [h.Class('state-moves')],
-        Array.map(card.moves, move =>
-          h.button(
-            [
-              h.Class('state-move'),
-              h.AriaLabel(
-                `S${home.id + 1}: ${move.label} to S${(byKey.get(move.to)?.id ?? 0) + 1}`,
-              ),
-              h.OnClick(Message.ClickedMove({ slot: home.key, to: move.to })),
-            ],
-            [`${move.label} → S${(byKey.get(move.to)?.id ?? 0) + 1}`],
-          ),
-        ),
-      ),
     ],
+  )
+
+const numberOf = (byKey: ReadonlyMap<string, Card>, key: string): string =>
+  `S${(byKey.get(key)?.id ?? 0) + 1}`
+
+// The permanent sidebar: the selected card's state and where it can go.
+const sidebarView = (
+  maybeSelected: Option.Option<Readonly<{ home: Card; card: Card }>>,
+  byKey: ReadonlyMap<string, Card>,
+  h: HtmlBuilder<Message>,
+): Html =>
+  h.aside(
+    [h.Class('lab-sidebar'), h.AriaLabel('Selected state')],
+    Option.match(maybeSelected, {
+      onNone: () => [h.p([h.Class('lab-empty')], ['Select a card.'])],
+      onSome: ({ home, card }) => [
+        h.h2([], [`S${card.id + 1}`]),
+        h.p([h.Class('side-note')], [card.via]),
+        card.isDeadEnd
+          ? h.p([h.Class('state-end')], ['Dead end: no move leads elsewhere.'])
+          : h.empty,
+        card.commands === ''
+          ? h.empty
+          : h.p([h.Class('side-note')], [`Pending: ${card.commands}`]),
+        h.h3([], ['Next']),
+        Array.match(card.moves, {
+          onEmpty: () => h.p([h.Class('side-note')], ['No moves from here.']),
+          onNonEmpty: moves =>
+            h.ul(
+              [h.Class('side-moves')],
+              Array.map(moves, move =>
+                h.li(
+                  [],
+                  [
+                    h.button(
+                      [
+                        h.AriaLabel(
+                          `${move.label} to ${numberOf(byKey, move.to)}`,
+                        ),
+                        h.OnClick(
+                          Message.ClickedMove({ slot: home.key, to: move.to }),
+                        ),
+                      ],
+                      [
+                        h.span([], [move.label]),
+                        h.span(
+                          [h.Class('side-target')],
+                          [numberOf(byKey, move.to)],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        }),
+        h.div(
+          [h.Class('side-actions')],
+          [
+            card === home
+              ? h.empty
+              : h.button(
+                  [
+                    h.Class('lab-quiet'),
+                    h.OnClick(Message.ClickedHome({ slot: home.key })),
+                  ],
+                  [`Back to S${home.id + 1}`],
+                ),
+            h.button(
+              [
+                h.Class('lab-quiet'),
+                h.OnClick(Message.ClickedPrune({ key: card.key })),
+              ],
+              ['Prune this state'],
+            ),
+          ],
+        ),
+      ],
+    }),
   )
 
 // NOTE: Pruned states are keyed by the default key, so the rule only matches
@@ -370,6 +420,19 @@ const pickerView = (
     ),
   )
 
+// The state a card shows: where it was moved to, or its home.
+const currentOf = (
+  result: Result,
+  moved: Readonly<Record<string, string>>,
+  home: Card,
+): Card =>
+  Option.getOrElse(
+    Option.flatMap(Record.get(moved, home.key), to =>
+      Option.fromNullishOr(result.byKey.get(to)),
+    ),
+    () => home,
+  )
+
 const gridView = (
   cases: Array.NonEmptyReadonlyArray<Case>,
   hasComparisons: boolean,
@@ -378,6 +441,7 @@ const gridView = (
   pruned: string,
   clicks: ReadonlyArray<Click>,
   moved: Readonly<Record<string, string>>,
+  maybeSelected: Option.Option<string>,
   h: HtmlBuilder<Message>,
 ): Html => {
   const keys: ReadonlyArray<string> = JSON.parse(pruned)
@@ -385,6 +449,17 @@ const gridView = (
     { depth, states: STATES, exclude: new Set(keys) },
     clicks,
   )
+  // With nothing selected, the first card is.
+  const maybeHome = Option.orElse(
+    Option.flatMap(maybeSelected, key =>
+      Array.findFirst(result.cards, card => card.key === key),
+    ),
+    () => Array.head(result.cards),
+  )
+  const selected = Option.match(maybeHome, {
+    onNone: () => undefined,
+    onSome: home => ({ home, card: currentOf(result, moved, home) }),
+  })
   return h.div(
     [],
     [
@@ -418,21 +493,22 @@ const gridView = (
             ],
           )
         : h.empty,
-      h.section(
-        [h.Class('lab-grid'), h.AriaLabel('States')],
-        Array.map(result.cards, home =>
-          cardView(
-            home,
-            Option.getOrElse(
-              Option.flatMap(Record.get(moved, home.key), to =>
-                Option.fromNullishOr(result.byKey.get(to)),
+      h.div(
+        [h.Class('lab-workspace')],
+        [
+          h.section(
+            [h.Class('lab-grid'), h.AriaLabel('States')],
+            Array.map(result.cards, home =>
+              cardView(
+                home,
+                currentOf(result, moved, home),
+                home === selected?.home,
+                h,
               ),
-              () => home,
             ),
-            result.byKey,
-            h,
           ),
-        ),
+          sidebarView(Option.fromNullishOr(selected), result.byKey, h),
+        ],
       ),
     ],
   )
@@ -537,6 +613,7 @@ export const makeLab = (
       pruned: [],
       clicks: [],
       moved: {},
+      maybeSelected: Option.none(),
     },
   })
 
@@ -559,6 +636,7 @@ export const makeLab = (
           pruned: () => [],
           clicks: () => [],
           moved: () => ({}),
+          maybeSelected: () => Option.none(),
         }),
       }),
       ClickedShallower: () => ({
@@ -573,6 +651,9 @@ export const makeLab = (
         model: modifyFields(model, {
           pruned: pruned => Array.append(pruned, key),
         }),
+      }),
+      ClickedCard: ({ slot }) => ({
+        model: modifyFields(model, { maybeSelected: () => Option.some(slot) }),
       }),
       ClickedMove: ({ slot, to }) => ({
         model: modifyFields(model, {
@@ -609,6 +690,7 @@ export const makeLab = (
       JSON.stringify(model.pruned),
       model.clicks,
       model.moved,
+      model.maybeSelected,
       h,
     ])
 
